@@ -8,3 +8,6 @@ openpyxl>=3.1
 # Notebook
 jupyterlab>=4.0
 ipykernel>=6.0
+
+# Demo app
+streamlit>=1.46

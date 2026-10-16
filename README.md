@@ -30,6 +30,7 @@ python -m ipykernel install --user --name claims-ml --display-name "Python (clai
 python run_pipeline.py                       # reads data/tech_data_2026.xlsx
 python run_pipeline.py path/to/tech_data_2026.xlsx
 jupyter lab notebooks/01_data_exploration.ipynb   # choose kernel "Python (claims-ml)"
+streamlit run app.py                              # interactive demo app
 ```
 The pipeline runs in under a minute and writes everything to `outputs/`. The notebook reads
 `data/tech_data_2026.xlsx` by default; set the `CLAIMS_DATA` env variable to point elsewhere.
@@ -38,6 +39,7 @@ Run `deactivate` to leave the venv.
 ## Project layout
 ```
 notebooks/01_data_exploration.ipynb   step-by-step EDA with findings (run before the pipeline)
+app.py            Streamlit demo: problem, data issues, explorer, model results, quote checker, review queue, verdict
 src/config.py     paths, feature lists, leakage list
 src/data.py       load, data-quality report, cleaning, collapse to one row per quote
 src/features.py   quote vs estimate features, feature matrix
@@ -46,6 +48,19 @@ src/models.py     Model A (fair cost) and Model B (rejection), grouped out-of-fo
 src/evaluate.py   capture curves, review-budget table, figure 05
 run_pipeline.py   end-to-end run
 ```
+
+## Demo app
+`streamlit run app.py` opens a browser app with seven pages:
+1. **Problem & approach**: the business → data science framing and headline numbers
+2. **Data & limitations**: review rate by quote/estimate gap, selection bias, data-quality report
+3. **Explore the data**: interactive estimate vs quote scatter and inspection-org comparison, with filters
+4. **Model results**: model metrics, fair-cost feature importance, quote vs fair price gap, adjustable review-budget curve
+5. **Quote checker**: enter inspection details and a quote, get the fair-cost range, P(reject) and a review/approve recommendation (includes the claim 2 example)
+6. **Review queue**: all quotes ranked by € at risk for a chosen review capacity, compared with today's reviews, downloadable as CSV
+7. **Verdict & next steps**: where ML helps and where it doesn't (yet), and approaches to explore with more time
+
+The app reads `data/tech_data_2026.xlsx` (or `CLAIMS_DATA`); if no file is found it offers an upload button.
+Models train once on first load (about 1 minute) and are then cached.
 
 ## Key modelling decisions
 - **Unit = quote.** Rows sharing a quote_id are coverage lines with identical contractor cost,
