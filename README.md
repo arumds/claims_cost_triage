@@ -17,12 +17,10 @@ Two models:
 ## Setup (Python 3.10+)
 macOS / Linux:
 ```bash
-cd "/path/to/If-task/claims_ml"
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-python -m ipykernel install --user --name claims-ml --display-name "Python (claims-ml)"
 ```
 
 ## Run
