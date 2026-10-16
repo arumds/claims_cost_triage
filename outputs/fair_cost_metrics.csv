@@ -1,3 +1,3 @@
 model,MAE_eur,median_abs_pct_err,p90_coverage
 baseline: quote = estimate,40700.08,0.454,
-fair-cost model (p50),22183.635,0.239,0.833
+fair-cost model (p50),21908.565,0.233,0.833
