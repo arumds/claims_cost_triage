@@ -134,13 +134,31 @@ elif page.startswith("2"):
     st.caption("Review follows claim size, not the gap between estimate and bill. "
                "Rejection rates are similar (6–11%) across all gap groups.")
 
+    st.subheader("How the data was prepared")
+    dedup = raw.drop_duplicates()
+    multi = dedup.quote_id.value_counts()
+    f = st.columns(4)
+    f[0].metric("Raw rows", f"{len(raw):,}")
+    f[1].metric("After removing exact duplicates", f"{len(dedup):,}", delta=f"−{len(raw) - len(dedup)} rows",
+                delta_color="off", help="Rows identical in every column")
+    f[2].metric("Quotes (one row each)", f"{len(q):,}",
+                delta=f"{(multi > 1).sum()} quotes spanned {int(multi[multi > 1].sum()):,} rows", delta_color="off",
+                help="Rows sharing a quote_id are coverage lines with the same contractor cost, decision and review "
+                     "flag, so each quote is kept once")
+    f[3].metric("Claims", f"{q.claim_id.nunique():,}", help="Train/test splits are made by claim, so no claim is on both sides")
+    st.markdown(f"""
+- **Missing values and zeros are flagged, not filled in:** missing or zero estimate, missing building area / construction year.
+- **Rare inspection organisations grouped:** orgs with fewer than {C.RARE_ORG_MIN_COUNT} quotes become "OTHER" ({(q.inspection_org == "OTHER").sum():,} quotes).
+- **Outcome columns excluded from model inputs:** insurer / policyholder cost, decision and review flag are only known after the decision.
+""")
+
     st.subheader("Key limitations")
     st.markdown("""
 - **Selection bias:** rejections exist only where a human looked, and humans mostly look at big claims.
 - **No savings label:** we know approved/rejected, not what the right price was. Only 70 rejected quotes.
 - **Coarse estimate:** always a multiple of €10k; 240 zeros, 3.5% missing. `building_area` 50% missing.
-- **Messy structure:** several rows per quote, several quotes per claim, 26 duplicates; costs capped at €300k.
-- **Leakage risk:** insurer/policyholder cost and decision are outcomes, so they are never model inputs.
+- **Messy structure:** several rows per quote and several quotes per claim (handled above); costs capped at €300k (kept, but caps limit what the model can learn at the top end).
+- **Leakage risk:** outcome columns would make the model look better than it is; they are excluded (see above).
 - **No dates:** drift over time can't be checked.
 """)
     with st.expander("Full data-quality report"):
