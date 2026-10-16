@@ -63,8 +63,11 @@ The app reads `data/tech_data_2026.xlsx` (or `CLAIMS_DATA`); if no file is found
 Models train once on first load (about 1 minute) and are then cached.
 
 ## Key modelling decisions
-- **Unit = quote.** Rows sharing a quote_id are coverage lines with identical contractor cost,
-  decision and review flag, so they are collapsed (assumption, documented in `data.py`).
+- **Unit = quote.** Rows sharing a quote_id have the same contractor cost, estimate, decision and
+  review flag, so they are collapsed to one row. About 12% of quotes have rows with conflicting
+  categories (e.g. House vs Commercial for the same building); each category is resolved by majority
+  vote (ties -> first row), and `n_coverage_rows` and `conflicting_rows` are kept as features
+  (documented in `data.py`).
 - **Grouped CV by claim_id.** Quotes from the same claim never end up in both train and test.
 - **No leakage.** `insurance_company_cost`, `policyholder_cost`, `decision_on_quote` and
   `manual_review` are produced after the decision and are never used as features.
@@ -74,10 +77,10 @@ Models train once on first load (about 1 minute) and are then cached.
 
 ## Results (out-of-fold, from this dataset)
 - **Model A:** MAE €22k vs €41k for "quote = inspector estimate"; median abs. % error 24% vs 45%.
-  Main drivers (out-of-fold permutation importance, `outputs/fair_cost_importance.csv`): insurance type (~31%),
-  damage type (~24%), inspector estimate (~17%), number of inspection images (~11%), quote stage (~8%),
-  inspection org (~5%). Building attributes add almost nothing.
-- **Model B** (coefficients in `outputs/rejection_coefficients.csv`): ROC-AUC 0.68 vs 0.65 for "largest quote first". At a 20% review budget it
+  Main drivers (out-of-fold permutation importance, `outputs/fair_cost_importance.csv`): insurance type (~29%),
+  damage type (~23%), inspector estimate (~17%), number of inspection images (~11%), quote stage (~9%),
+  inspection org (~6%). Building attributes add almost nothing.
+- **Model B** (coefficients in `outputs/rejection_coefficients.csv`): ROC-AUC 0.67 vs 0.65 for "largest quote first". At a 20% review budget it
   catches 79% of rejected € vs 77% for the baseline. This is a small gain, which is expected
   with only 70 positive labels.
 - **Auto-processed quotes:** 17% are above the fair-cost p90. That's about €23M of quoted
