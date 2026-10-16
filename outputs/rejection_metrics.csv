@@ -1,0 +1,5 @@
+score,ROC_AUC,PR_AUC,base_rate,n_rejected
+model p_reject,0.681,0.141,0.084,70
+baseline: largest quote,0.647,0.142,0.084,70
+baseline: quote/estimate ratio,0.528,0.095,0.084,70
+baseline: quote vs fair-cost model,0.513,0.105,0.084,70

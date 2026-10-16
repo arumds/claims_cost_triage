@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Environments / IDE / OS
+.venv/
+venv/
+.idea/
+.DS_Store
+
+# Data: only the project dataset in data/ is committed
+*.xlsx
+!data/tech_data_2026.xlsx
+outputs/scored_quotes.csv
