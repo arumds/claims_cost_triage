@@ -60,20 +60,48 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# Categorical columns that can disagree between rows of the same quote
+VOTE_COLS = ["inspection_type", "insurance_type", "building_type",
+             "building_geographical_location", "inspection_org"]
+
+
+def _majority(s: pd.Series):
+    """Most frequent value; ties go to the value that appears first (file order)."""
+    counts = s.value_counts()
+    top = set(counts[counts == counts.max()].index)
+    return next(v for v in s if v in top)
+
+
 def to_quote_level(df: pd.DataFrame) -> pd.DataFrame:
     """Collapse to one row per quote (the decision unit).
 
-    Assumption: rows sharing a quote_id are coverage lines of the same quote - contractor
-    cost, decision and review flag are identical within a quote, while the cost split and
-    some categoricals vary. We keep the first row's attributes, the max insurer cost and
-    the number of coverage rows.
+    Rows sharing a quote_id carry the same contractor cost, estimate, images, building size/year,
+    excess, decision and review flag, but ~10% of quotes have rows with conflicting categories
+    (e.g. the same building labelled House in one row and Commercial in another). Some of this
+    looks like multiple coverages, some like entry errors. We keep one row per quote:
+    - categories resolved by majority vote within the quote (ties -> first row in file order)
+    - n_coverage_rows: number of rows the quote had
+    - conflicting_rows: 1 if any category disagreed between the rows
+    - insurance_company_cost: max over rows (only used for reporting, never as a model input)
+    Alternatives tested (multi-hot flags of all labels present) gave no accuracy gain.
     """
-    df = df.sort_values(["claim_id", "quote_id"])
+    df = df.sort_values(["claim_id", "quote_id"], kind="stable")
     agg = df.groupby("quote_id").agg(
         n_coverage_rows=("claim_id", "size"),
         insurance_company_cost=("insurance_company_cost", "max"),
     )
     first = df.drop_duplicates("quote_id").set_index("quote_id").drop(columns=["insurance_company_cost"])
+
+    multi_ids = agg.index[agg.n_coverage_rows > 1]
+    multi = df[df.quote_id.isin(multi_ids)]
+    if len(multi):
+        voted = multi.groupby("quote_id")[VOTE_COLS].agg(_majority)
+        first.loc[voted.index, VOTE_COLS] = voted
+        conflict = multi.groupby("quote_id")[VOTE_COLS].nunique().gt(1).any(axis=1)
+    else:
+        conflict = pd.Series(dtype=bool)
+    agg["conflicting_rows"] = conflict.reindex(agg.index, fill_value=False).astype(int)
+
     q = first.join(agg).reset_index()
     q["quote_seq"] = q.groupby("claim_id").cumcount() + 1   # order of the quote within its claim
     q["rejected"] = (q.decision_on_quote == "rejected").astype(int)
