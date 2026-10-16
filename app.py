@@ -147,6 +147,7 @@ elif page.startswith("2"):
                      "flag, so each quote is kept once")
     f[3].metric("Claims", f"{q.claim_id.nunique():,}", help="Train/test splits are made by claim, so no claim is on both sides")
     st.markdown(f"""
+- **Conflicting rows within a quote:** {int(q.conflicting_rows.sum()):,} quotes have rows with different labels (e.g. the same building as House in one row and Commercial in another). Each category is resolved by majority vote (ties → first row), and `n_coverage_rows` / `conflicting_rows` are kept as model features. Keeping all labels as flags gave no accuracy gain.
 - **Missing values and zeros are flagged, not filled in:** missing or zero estimate, missing building area / construction year.
 - **Rare inspection organisations grouped:** orgs with fewer than {C.RARE_ORG_MIN_COUNT} quotes become "OTHER" ({(q.inspection_org == "OTHER").sum():,} quotes).
 - **Outcome columns excluded from model inputs:** insurer / policyholder cost, decision and review flag are only known after the decision.
@@ -267,8 +268,8 @@ elif page.startswith("4"):
                  alt.Tooltip("review_rate", format=".0%", title="reviewed today")]).properties(
         height=300, title="Amount above fair price (€M)"), width="stretch")
     st.caption("Close quotes → auto-approve. Far above → review. Today quotes far above the fair price are reviewed "
-               "no more often than normal ones (≈25% vs 21%). Rejection rate when reviewed: ≈6% for close quotes vs "
-               "≈10% far above – a real but weak signal.")
+               "no more often than normal ones (≈26% vs 21%). Rejection rate when reviewed: ≈8% for close quotes vs "
+               "≈13% far above – a real but weak signal.")
 
     st.subheader("Review effort vs rejected € caught")
     scores = {"model: P(reject) × quote": r.priority,
@@ -446,7 +447,7 @@ elif page.startswith("7"):
     a, b = st.columns(2)
     a.success("""**Where it helps (supported by the data)**
 - **Better price benchmark:** the fair-cost model halves the error of the inspector estimate (≈€22k vs €41k).
-- **Smarter review effort:** about half of quotes are close to the fair price and could be auto-approved, while 227 of 304 quotes priced over 2× their fair cost went through without review (≈€17M above the fair price).
+- **Smarter review effort:** about half of quotes are close to the fair price and could be auto-approved, while 220 of 297 quotes priced over 2× their fair cost went through without review (≈€17M above the fair price).
 - **Partner insight:** inspection orgs' estimates range from ≈0.5× to 1.8× the final bill, which is a lever even without ML.""")
     b.warning("""**Where it doesn't (yet)**
 - **Rejection model ≈ simple rule:** it catches 79% vs 77% of rejected € at a 20% review budget.
