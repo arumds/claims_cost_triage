@@ -20,7 +20,7 @@ CATEGORICAL = [
 ]
 NUMERIC_PRE_QUOTE = [
     "estimated_repair_cost", "inspection_images", "building_area",
-    "construction_year", "insurance_excess_amount", "n_coverage_rows",
+    "construction_year", "insurance_excess_amount", "n_coverage_rows", "conflicting_rows",
     "quote_seq", "est_missing", "est_zero", "area_missing", "year_missing",
 ]
 # Features that use the quoted amount itself (used by the rejection model only).
