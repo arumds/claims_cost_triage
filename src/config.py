@@ -27,3 +27,8 @@ QUOTE_FEATURES = ["contractor_cost", "log_cost_to_estimate", "quote_minus_estima
 
 # Outcome columns: decided AFTER the quote is processed -> never use as features.
 LEAKY = ["insurance_company_cost", "policyholder_cost", "decision_on_quote", "manual_review"]
+
+# Primary triage rule: review if bill > RULE_K × inspector estimate
+RULE_K = 1.25
+RULE_TRIGGERS = (1.10, 1.25, 1.50, 2.00)
+SEVERE_OVERRUN_EUR = 20_000      # bill at least this much above the estimate = severe overrun
