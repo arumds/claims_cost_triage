@@ -22,27 +22,51 @@ def _regressor(quantile: float):
 
 
 
+def aligned_feature_matrix(df: pd.DataFrame, categories: dict) -> pd.DataFrame:
+    """Feature matrix whose categorical codes match the training categories (unseen -> OTHER)."""
+    X, _ = feature_matrix(df, include_quote=False)
+    for c, cats in categories.items():
+        X[c] = pd.Categorical(df[c].where(df[c].isin(cats), "OTHER" if "OTHER" in cats else cats[0]),
+                              categories=cats)
+    return X
+
+
+def _with_excess(res: pd.DataFrame) -> pd.DataFrame:
+    res["excess_vs_fair"] = res.contractor_cost - res.fair_p50
+    res["above_p90"] = (res.contractor_cost > res.fair_p90).astype(int)
+    return res
+
+
 # ---------------------------------------------------------------- Model A
-def fair_cost_oof(q: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def fair_cost_oof(claims: pd.DataFrame, q: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Out-of-fold predictions of the median (p50) and upper (p90) 'fair' quote.
 
-    Uses only inspection-time features. Trained on approved quotes, folds grouped by claim
-    so no claim leaks between train and test.
+    Trained on one quote per claim (to_claim_level): a claim's quotes are revisions of the same
+    repair, so training on all of them would count it several times. Uses only inspection-time
+    features, trained on approved claims. Every quote in `q` is scored by the fold model that did
+    not see its claim, so the rejection model still gets honest fair-cost inputs for all quotes.
+    Returns (quote-level predictions, claim-level predictions, claim-level metrics).
     """
-    X, _ = feature_matrix(q, include_quote=False)
-    y = np.log1p(q.contractor_cost.values)
-    out = pd.DataFrame(index=q.index, columns=["fair_p50", "fair_p90"], dtype=float)
-    for tr, te in GroupKFold(C.N_FOLDS).split(X, y, groups=q.claim_id):
-        tr = tr[q.rejected.values[tr] == 0]
+    X, _ = feature_matrix(claims, include_quote=False)
+    categories = {c: X[c].cat.categories for c in C.CATEGORICAL}
+    Xq = aligned_feature_matrix(q, categories)
+    y = np.log1p(claims.contractor_cost.values)
+    approved = claims.decision_on_quote.ne("rejected").to_numpy()
+    out = pd.DataFrame(index=claims.index, columns=["fair_p50", "fair_p90"], dtype=float)
+    out_q = pd.DataFrame(index=q.index, columns=["fair_p50", "fair_p90"], dtype=float)
+    for tr, te in GroupKFold(C.N_FOLDS).split(X, y, groups=claims.claim_id):
+        te_q = q.claim_id.isin(claims.claim_id.iloc[te]).to_numpy()
+        tr = tr[approved[tr]]
         for qt, col in [(.5, "fair_p50"), (.9, "fair_p90")]:
             m = _regressor(qt).fit(X.iloc[tr], y[tr])
             out.iloc[te, out.columns.get_loc(col)] = np.expm1(m.predict(X.iloc[te]))
+            out_q.loc[te_q, col] = np.expm1(m.predict(Xq[te_q]))
 
-    res = q[["contractor_cost", "estimated_repair_cost"]].join(out)
-    res["excess_vs_fair"] = res.contractor_cost - res.fair_p50
-    res["above_p90"] = (res.contractor_cost > res.fair_p90).astype(int)
+    res = _with_excess(claims[["claim_id", "quote_id", "contractor_cost", "estimated_repair_cost",
+                               "manual_review"]].join(out))
+    res_q = _with_excess(q[["contractor_cost"]].join(out_q))
 
-    # metrics vs naive baseline "quote = inspector estimate"
+    # metrics (one row per claim) vs naive baseline "quote = inspector estimate"
     ok = res.estimated_repair_cost.notna()
     metrics = pd.DataFrame({
         "model": ["baseline: quote = estimate", "fair-cost model (p50)"],
@@ -53,7 +77,8 @@ def fair_cost_oof(q: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             np.median(np.abs(res.fair_p50[ok] / res.contractor_cost[ok].clip(lower=1) - 1))],
         "p90_coverage": [np.nan, 1 - res.above_p90.mean()],   # should be ~0.90
     }).round(3)
-    return res, metrics
+    metrics["n_claims"] = len(res)
+    return res_q.drop(columns="contractor_cost"), res, metrics
 
 
 # ---------------------------------------------------------------- Model B
@@ -64,7 +89,7 @@ def fair_cost_oof(q: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 REJ_CATS = ["inspection_type", "insurance_type", "building_type", "quote_event",
             "building_geographical_location"]
 REJ_NUMS = ["log_quote", "log_estimate", "log_quote_to_fair", "inspection_images",
-            "insurance_excess_amount", "quote_seq", "n_coverage_rows", "est_missing", "est_zero"]
+            "insurance_excess_amount"]
 
 
 def _rejection_frame(r: pd.DataFrame) -> pd.DataFrame:
@@ -72,8 +97,7 @@ def _rejection_frame(r: pd.DataFrame) -> pd.DataFrame:
     X["log_quote"] = np.log1p(r.contractor_cost)
     X["log_estimate"] = np.log1p(r.estimated_repair_cost.fillna(0))
     X["log_quote_to_fair"] = np.log1p(r.contractor_cost) - np.log1p(r.fair_p50)
-    for c in ["inspection_images", "insurance_excess_amount", "quote_seq", "n_coverage_rows",
-              "est_missing", "est_zero"]:
+    for c in ["inspection_images", "insurance_excess_amount"]:
         X[c] = r[c]
     return X
 
@@ -128,11 +152,11 @@ def score_all(model, q: pd.DataFrame) -> pd.Series:
 
 
 # ---------------------------------------------------------------- final models for the app
-def fit_fair_cost_models(q: pd.DataFrame) -> dict:
-    """Fit p50/p90 fair-cost models on all approved quotes (for scoring new quotes)."""
-    X, _ = feature_matrix(q, include_quote=False)
-    keep = q.rejected.values == 0
-    y = np.log1p(q.contractor_cost.values)
+def fit_fair_cost_models(claims: pd.DataFrame) -> dict:
+    """Fit p50/p90 fair-cost models on all approved claims, one quote per claim (for scoring new quotes)."""
+    X, _ = feature_matrix(claims, include_quote=False)
+    keep = claims.decision_on_quote.ne("rejected").to_numpy()
+    y = np.log1p(claims.contractor_cost.values)
     models = {qt: _regressor(qt).fit(X[keep], y[keep]) for qt in (.5, .9)}
     categories = {c: X[c].cat.categories for c in C.CATEGORICAL}
     return {"models": models, "categories": categories}
@@ -140,28 +164,25 @@ def fit_fair_cost_models(q: pd.DataFrame) -> dict:
 
 def predict_fair(fair: dict, new: pd.DataFrame) -> pd.DataFrame:
     """Predict fair_p50 / fair_p90 for new quotes (categories aligned to training)."""
-    X, _ = feature_matrix(new, include_quote=False)
-    for c, cats in fair["categories"].items():
-        X[c] = pd.Categorical(new[c].where(new[c].isin(cats), "OTHER" if "OTHER" in cats else cats[0]),
-                              categories=cats)
+    X = aligned_feature_matrix(new, fair["categories"])
     return pd.DataFrame({"fair_p50": np.expm1(fair["models"][.5].predict(X)),
                          "fair_p90": np.expm1(fair["models"][.9].predict(X))}, index=new.index)
 
 
 # ---------------------------------------------------------------- feature importance (Model A)
-def fair_cost_importance(q: pd.DataFrame, n_repeats: int = 3) -> pd.DataFrame:
-    """Out-of-fold permutation importance for the p50 fair-cost model.
+def fair_cost_importance(claims: pd.DataFrame, n_repeats: int = 3) -> pd.DataFrame:
+    """Out-of-fold permutation importance for the p50 fair-cost model (one quote per claim).
 
-    For each claim-grouped fold: fit on the training part (approved quotes), then shuffle one
+    For each fold: fit on the training part (approved claims), then shuffle one
     feature at a time in the held-out part and measure how much the error (MAE of log cost)
     increases. Averaged over folds. Bigger increase = the model relies more on that feature.
     """
     from sklearn.inspection import permutation_importance
-    X, _ = feature_matrix(q, include_quote=False)
-    y = np.log1p(q.contractor_cost.values)
+    X, _ = feature_matrix(claims, include_quote=False)
+    y = np.log1p(claims.contractor_cost.values)
     imps = []
-    for tr, te in GroupKFold(C.N_FOLDS).split(X, y, groups=q.claim_id):
-        tr = tr[q.rejected.values[tr] == 0]
+    for tr, te in GroupKFold(C.N_FOLDS).split(X, y, groups=claims.claim_id):
+        tr = tr[claims.decision_on_quote.ne("rejected").to_numpy()[tr]]
         m = _regressor(.5).fit(X.iloc[tr], y[tr])
         res = permutation_importance(m, X.iloc[te], y[te], scoring="neg_mean_absolute_error",
                                      n_repeats=n_repeats, random_state=C.RANDOM_STATE)
