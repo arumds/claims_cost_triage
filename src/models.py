@@ -9,6 +9,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.metrics import average_precision_score, mean_absolute_error, roc_auc_score
 from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
+from sklearn.inspection import permutation_importance
 
 from . import config as C
 from .features import feature_matrix
@@ -177,7 +178,6 @@ def fair_cost_importance(claims: pd.DataFrame, n_repeats: int = 3) -> pd.DataFra
     feature at a time in the held-out part and measure how much the error (MAE of log cost)
     increases. Averaged over folds. Bigger increase = the model relies more on that feature.
     """
-    from sklearn.inspection import permutation_importance
     X, _ = feature_matrix(claims, include_quote=False)
     y = np.log1p(claims.contractor_cost.values)
     imps = []
