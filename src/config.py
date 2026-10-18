@@ -20,11 +20,10 @@ CATEGORICAL = [
 ]
 NUMERIC_PRE_QUOTE = [
     "estimated_repair_cost", "inspection_images", "building_area",
-    "construction_year", "insurance_excess_amount", "n_coverage_rows", "conflicting_rows",
-    "quote_seq", "est_missing", "est_zero", "area_missing", "year_missing",
+    "construction_year", "insurance_excess_amount",
 ]
 # Features that use the quoted amount itself (used by the rejection model only).
-QUOTE_FEATURES = ["contractor_cost", "log_quote_to_estimate", "quote_minus_estimate"]
+QUOTE_FEATURES = ["contractor_cost", "log_cost_to_estimate", "quote_minus_estimate"]
 
 # Outcome columns: decided AFTER the quote is processed -> never use as features.
 LEAKY = ["insurance_company_cost", "policyholder_cost", "decision_on_quote", "manual_review"]
