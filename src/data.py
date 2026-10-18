@@ -73,18 +73,7 @@ def _majority(s: pd.Series):
 
 
 def to_quote_level(df: pd.DataFrame) -> pd.DataFrame:
-    """Collapse to one row per quote (the decision unit).
-
-    Rows sharing a quote_id carry the same contractor cost, estimate, images, building size/year,
-    excess, decision and review flag, but ~10% of quotes have rows with conflicting categories
-    (e.g. the same building labelled House in one row and Commercial in another). Some of this
-    looks like multiple coverages, some like entry errors. We keep one row per quote:
-    - categories resolved by majority vote within the quote (ties -> first row in file order)
-    - n_coverage_rows: number of rows the quote had
-    - conflicting_rows: 1 if any category disagreed between the rows
-    - insurance_company_cost: max over rows (only used for reporting, never as a model input)
-    Alternatives tested (multi-hot flags of all labels present) gave no accuracy gain.
-    """
+    """One row per quote: categories by majority vote, insurer cost = max over rows."""
     df = df.sort_values(["claim_id", "quote_id"], kind="stable")
     agg = df.groupby("quote_id").agg(
         n_coverage_rows=("claim_id", "size"),
@@ -97,17 +86,25 @@ def to_quote_level(df: pd.DataFrame) -> pd.DataFrame:
     if len(multi):
         voted = multi.groupby("quote_id")[VOTE_COLS].agg(_majority)
         first.loc[voted.index, VOTE_COLS] = voted
-        conflict = multi.groupby("quote_id")[VOTE_COLS].nunique().gt(1).any(axis=1)
-    else:
-        conflict = pd.Series(dtype=bool)
-    agg["conflicting_rows"] = conflict.reindex(agg.index, fill_value=False).astype(int)
 
-    q = first.join(agg).reset_index()
-    q["quote_seq"] = q.groupby("claim_id").cumcount() + 1   # order of the quote within its claim
-    q["rejected"] = (q.decision_on_quote == "rejected").astype(int)
+    return _group_rare_orgs(first.join(agg).reset_index())
 
-    # group rare inspection orgs so the categorical stays learnable
-    counts = q.inspection_org.value_counts()
+
+def to_claim_level(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per claim (final quote preferred, else latest), as in notebook 01."""
+    def _keep_last(d, key):
+        return (d.assign(is_final=d.quote_event.eq("final quote"))
+                .sort_values("is_final", kind="stable")
+                .drop_duplicates(subset=key, keep="last")
+                .drop(columns="is_final")
+                .reset_index(drop=True))
+
+    return _group_rare_orgs(_keep_last(_keep_last(df, "quote_id"), "claim_id"))
+
+
+def _group_rare_orgs(t: pd.DataFrame) -> pd.DataFrame:
+    """Pool rare inspection orgs into OTHER so the categorical stays learnable."""
+    counts = t.inspection_org.value_counts()
     rare = counts[counts < C.RARE_ORG_MIN_COUNT].index
-    q.loc[q.inspection_org.isin(rare), "inspection_org"] = "OTHER"
-    return q
+    t.loc[t.inspection_org.isin(rare), "inspection_org"] = "OTHER"
+    return t
