@@ -8,6 +8,8 @@
 5. Model B  rejection model      -> outputs/rejection_metrics.csv, rejection_coefficients.csv
 6. Business evaluation          -> outputs/review_budget_table.csv, figures/05_capture_curve.png
 7. Score every quote            -> outputs/scored_quotes.csv (review priority list)
+8. Primary rule vs fair-cost    -> outputs/rule_table.csv, rule_vs_fair_cost.csv, queue_overlap.csv,
+                                   figures/07_rule_vs_fair_cost.png
 """
 import sys
 from pathlib import Path
@@ -18,10 +20,11 @@ import pandas as pd
 from src import config as C
 from src.data import clean, data_quality_report, load_raw, to_claim_level, to_quote_level
 from src.eda import run_eda
-from src.evaluate import budget_table, plot_capture, plot_importance
+from src.evaluate import budget_table, plot_capture, plot_head_to_head, plot_importance
 from src.features import add_quote_features
 from src.models import (fair_cost_importance, fair_cost_oof, fit_final_rejection_model,
                         rejection_oof, score_all)
+from src.triage import add_rule, head_to_head, queue_overlap, rule_table
 
 pd.set_option("display.width", 160)
 pd.set_option("display.max_columns", 20)
@@ -47,7 +50,7 @@ def main(path=C.DATA_PATH):
 
     # Model A - fair cost, trained on one quote per claim; every quote is scored out-of-fold
     fair_q, fair_claims, m_a = fair_cost_oof(claims, q)
-    q = q.join(fair_q)
+    q = add_rule(q.join(fair_q))
     m_a.to_csv(C.OUTPUT_DIR / "fair_cost_metrics.csv", index=False)
     print("\n== Model A: fair-cost model (out-of-fold) ==\n", m_a.to_string(index=False))
 
@@ -98,6 +101,18 @@ def main(path=C.DATA_PATH):
     ac = fair_claims[~fair_claims.manual_review]
     print(f"Auto-processed claims (one quote each) above fair-cost p90: {ac.above_p90.mean():.1%}"
           f"  | sum of excess over fair p50 on those: €{ac.loc[ac.above_p90 == 1, 'excess_vs_fair'].sum():,.0f}")
+
+    # Primary rule vs secondary fair-cost model, head to head
+    rt = rule_table(q)
+    rt.to_csv(C.OUTPUT_DIR / "rule_table.csv", index=False)
+    print(f"\n== Primary rule: review if bill > k × estimate ==\n", rt.to_string(index=False))
+    h2h, curves = head_to_head(r)
+    h2h.to_csv(C.OUTPUT_DIR / "rule_vs_fair_cost.csv", index=False)
+    plot_head_to_head(curves)
+    print("\n== Head-to-head on reviewed quotes with an estimate (out-of-fold) ==\n", h2h.to_string(index=False))
+    ov = queue_overlap(q)
+    ov.to_csv(C.OUTPUT_DIR / "queue_overlap.csv", index=False)
+    print(f"\n== Rule (k={C.RULE_K}) vs secondary at the same budget, all quotes ==\n", ov.to_string(index=False))
     print(f"\nDone. Outputs in {C.OUTPUT_DIR}")
 
 
