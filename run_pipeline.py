@@ -1,9 +1,9 @@
 """End-to-end pipeline:  python run_pipeline.py [path/to/tech_data_2026.xlsx]   (default: data/tech_data_2026.xlsx)
 
 1. data-quality report          -> outputs/data_quality.csv
-2. cleaning + quote-level table
+2. cleaning + quote-level table (rejection model) + claim-level table (fair-cost model)
 3. EDA figures and tables       -> outputs/figures/, outputs/eda_*.csv
-4. Model A  fair-cost model      -> outputs/fair_cost_metrics.csv, fair_cost_importance.csv,
+4. Model A  fair-cost model (one quote per claim) -> outputs/fair_cost_metrics.csv, fair_cost_importance.csv,
                                    figures/06_fair_cost_importance.png
 5. Model B  rejection model      -> outputs/rejection_metrics.csv, rejection_coefficients.csv
 6. Business evaluation          -> outputs/review_budget_table.csv, figures/05_capture_curve.png
@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from src import config as C
-from src.data import clean, data_quality_report, load_raw, to_quote_level
+from src.data import clean, data_quality_report, load_raw, to_claim_level, to_quote_level
 from src.eda import run_eda
 from src.evaluate import budget_table, plot_capture, plot_importance
 from src.features import add_quote_features
@@ -35,20 +35,23 @@ def main(path=C.DATA_PATH):
     dq.to_csv(C.OUTPUT_DIR / "data_quality.csv", index=False)
     print("\n== Data quality ==\n", dq.to_string(index=False))
 
-    q = add_quote_features(to_quote_level(clean(raw)))
-    print(f"\nQuote-level table: {len(q)} quotes, {q.claim_id.nunique()} claims")
+    cleaned = clean(raw)
+    q = add_quote_features(to_quote_level(cleaned))
+    q["rejected"] = q.decision_on_quote.eq("rejected").astype(int)
+    claims = to_claim_level(cleaned)
+    print(f"\nQuote-level table: {len(q)} quotes, {q.claim_id.nunique()} claims | claim-level table: {len(claims)} claims")
 
     for name, t in run_eda(q).items():
         t.to_csv(C.OUTPUT_DIR / f"eda_{name}.csv")
         print(f"\n== EDA: {name} ==\n", t.round(3).to_string())
 
-    # Model A - fair cost
-    fair, m_a = fair_cost_oof(q)
-    q = q.join(fair[["fair_p50", "fair_p90", "excess_vs_fair", "above_p90"]])
+    # Model A - fair cost, trained on one quote per claim; every quote is scored out-of-fold
+    fair_q, fair_claims, m_a = fair_cost_oof(claims, q)
+    q = q.join(fair_q)
     m_a.to_csv(C.OUTPUT_DIR / "fair_cost_metrics.csv", index=False)
     print("\n== Model A: fair-cost model (out-of-fold) ==\n", m_a.to_string(index=False))
 
-    imp_a = fair_cost_importance(q)
+    imp_a = fair_cost_importance(claims)
     imp_a.to_csv(C.OUTPUT_DIR / "fair_cost_importance.csv", index=False)
     plot_importance(imp_a)
     print("\n== Model A feature importance (out-of-fold permutation) ==\n",
@@ -90,9 +93,11 @@ def main(path=C.DATA_PATH):
         C.OUTPUT_DIR / "scored_quotes.csv", index=False)
 
     auto = q[~q.manual_review]
-    print(f"\nAuto-processed quotes flagged for review: {(auto.suggested_action == 'manual review').mean():.1%}"
-          f"  | above fair-cost p90: {auto.above_p90.mean():.1%}"
-          f"  | sum of excess over fair p50 on those: €{auto.loc[auto.above_p90 == 1, 'excess_vs_fair'].sum():,.0f}")
+    print(f"\nAuto-processed quotes flagged for review: {(auto.suggested_action == 'manual review').mean():.1%}")
+    # € above fair cost per claim (latest quote only), so revised quotes of one repair are not counted twice
+    ac = fair_claims[~fair_claims.manual_review]
+    print(f"Auto-processed claims (one quote each) above fair-cost p90: {ac.above_p90.mean():.1%}"
+          f"  | sum of excess over fair p50 on those: €{ac.loc[ac.above_p90 == 1, 'excess_vs_fair'].sum():,.0f}")
     print(f"\nDone. Outputs in {C.OUTPUT_DIR}")
 
 
