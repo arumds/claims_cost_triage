@@ -58,3 +58,18 @@ def plot_importance(imp: pd.DataFrame, top: int = 12):
     fig.tight_layout()
     fig.savefig(C.FIG_DIR / "06_fair_cost_importance.png", dpi=150)
     plt.close(fig)
+
+
+def plot_head_to_head(curves: pd.DataFrame):
+    fig, ax = plt.subplots(figsize=(6.5, 5))
+    for (name, cc), col in zip(curves.groupby("approach", sort=False), ["#dd6b20", "#38a169", "#2b6cb0", "#718096"]):
+        ax.plot(cc.share_reviewed, cc.share_value_caught, label=name, color=col, lw=2,
+                ls=":" if name.startswith("reference") else "-")
+    ax.plot([0, 1], [0, 1], "--", color="#a0aec0", label="random")
+    ax.set(xlabel="Share of quotes reviewed (ranked by score)", ylabel="Share of rejected € caught",
+           title="Primary rule vs fair-cost model\n(reviewed quotes with an estimate, out-of-fold)")
+    ax.legend(loc="lower right", fontsize=8)
+    C.FIG_DIR.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(C.FIG_DIR / "07_rule_vs_fair_cost.png", dpi=150)
+    plt.close(fig)
