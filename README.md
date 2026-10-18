@@ -5,14 +5,16 @@ Only ~23% of quotes are manually reviewed. The goal is to send the **right** quo
 score every incoming contractor quote by *expected rejected value* and route the top of the
 ranking to a reviewer, auto-approving the rest.
 
-Two models:
+A transparent rule first, two models on top:
 
-| Model | Question | Data | Method |
+| Layer | Question | Data | Method |
 |---|---|---|---|
+| **Primary – rule** | Is the bill far above the inspector estimate? | every quote with an estimate | review if bill > 1.25 × estimate (`RULE_K` in `config.py`) |
 | **A – Fair-cost model** | What should this repair cost, given what the inspection saw? | one quote per approved claim (final quote preferred) | Quantile gradient boosting (p50 and p90) on log cost |
 | **B – Rejection model** | How likely is a reviewer to reject this quote? | manually reviewed quotes only (70 rejections) | L2-regularised logistic regression |
 
 `priority_eur = p_reject × quoted amount` ranks quotes for review. Quotes above the fair-cost p90 are flagged too.
+The rule and the models are compared head to head on the same reviewed quotes (`src/triage.py`).
 
 ## Setup (Python 3.10+)
 macOS / Linux:
@@ -43,7 +45,8 @@ src/data.py       load, data-quality report, cleaning, collapse to one row per q
 src/features.py   quote vs estimate features, feature matrix
 src/eda.py        figures 01–04 + EDA tables
 src/models.py     Model A (fair cost) and Model B (rejection), grouped out-of-fold CV
-src/evaluate.py   capture curves, review-budget table, figure 05
+src/evaluate.py   capture curves, review-budget table, figures 05 and 07
+src/triage.py     primary rule (bill > k × estimate), rule table, head-to-head with the fair-cost model
 run_pipeline.py   end-to-end run
 ```
 
@@ -87,6 +90,21 @@ Models train once on first load (about 1 minute) and are then cached.
 - **Model B** (coefficients in `outputs/rejection_coefficients.csv`): ROC-AUC 0.66 vs 0.65 for "largest quote first". At a 20% review budget it
   catches 79% of rejected € vs 77% for the baseline. This is a small gain, which is expected
   with only 70 positive labels.
+- **Primary rule vs fair-cost model** (`outputs/rule_table.csv`, `rule_vs_fair_cost.csv`, `queue_overlap.csv`,
+  figure 07; 762 reviewed quotes with an estimate, 67 rejected, out-of-fold):
+
+  | Approach | ROC-AUC | rejected € caught @ 20% budget |
+  |---|---|---|
+  | primary: rule, bill ÷ estimate | 0.54 | 33% |
+  | secondary: fair-cost gap, bill ÷ fair p50 | 0.53 | 38% |
+  | secondary: fair-cost + P(reject) × bill | 0.68 | 80% |
+  | reference: largest bill first | 0.67 | 78% |
+
+  At k = 1.25 the rule flags 45% of quotes and catches 97% of severe overruns (> €20k over the estimate), but only
+  21% of the quotes reviewers rejected; 9% of quotes have no usable estimate and can't be scored. The model beats the
+  rule, but almost all of its gain comes from looking at the biggest bills first: the price gap alone, rule or fair-cost,
+  does not predict rejection. At the same budget the two queues agree on 43% of quotes (Jaccard); the model's queue
+  holds 89% of the € above fair p90 vs 76% for the rule (a yardstick that favours the model).
 - **Auto-processed claims:** 17.5% are above the fair-cost p90, about €14M above the p50 fair cost
   (one quote per claim). Summed over all quotes it would be €22M, but that counts revised quotes of the
   same repair several times. This is a candidate saving, not a proven one: it needs an audit to confirm.
