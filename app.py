@@ -12,7 +12,7 @@ import pandas as pd
 import streamlit as st
 
 from src import config as C
-from src.data import clean, data_quality_report, load_raw, to_quote_level
+from src.data import VOTE_COLS, clean, data_quality_report, load_raw, to_claim_level, to_quote_level
 from src.evaluate import budget_table, capture_curve
 from src.features import add_quote_features
 from src.models import (fair_cost_importance, fair_cost_oof, fit_fair_cost_models, fit_final_rejection_model,
@@ -32,6 +32,7 @@ def _data_path() -> Path:
 def load(path: str):
     raw = load_raw(path)
     q = add_quote_features(to_quote_level(clean(raw)))
+    q["rejected"] = q.decision_on_quote.eq("rejected").astype(int)
     return raw, q, data_quality_report(raw)
 
 
@@ -39,8 +40,10 @@ def load(path: str):
 def train(path: str):
     raw, q, _ = load(path)
     q = q.copy()
-    fair_oof, m_a = fair_cost_oof(q)
-    q = q.join(fair_oof[["fair_p50", "fair_p90", "excess_vs_fair", "above_p90"]])
+    claims = to_claim_level(clean(raw))           # fair-cost model: one quote per claim
+    fair_q, fair_claims, m_a = fair_cost_oof(claims, q)
+    q = q.join(fair_q)
+    fair_claims["rejected"] = claims.decision_on_quote.eq("rejected").astype(int)   # € views: one quote per claim
     r = q[q.manual_review].copy()
     r["p_reject"], m_b = rejection_oof(r)
     rej_model, coefs = fit_final_rejection_model(r)
@@ -51,10 +54,10 @@ def train(path: str):
     q["suggested_action"] = np.where((q.priority_eur >= threshold) | (q.above_p90 == 1),
                                      "manual review", "auto-approve")
     r["priority"] = r.p_reject * r.contractor_cost
-    fair_final = fit_fair_cost_models(q)
-    fair_imp = fair_cost_importance(q)
+    fair_final = fit_fair_cost_models(claims)
+    fair_imp = fair_cost_importance(claims)
     return dict(q=q, r=r, m_a=m_a, m_b=m_b, coefs=coefs, rej_model=rej_model,
-                fair=fair_final, threshold=threshold, fair_imp=fair_imp)
+                fair=fair_final, threshold=threshold, fair_imp=fair_imp, fair_claims=fair_claims)
 
 
 path = _data_path()
@@ -147,7 +150,7 @@ elif page.startswith("2"):
                      "flag, so each quote is kept once")
     f[3].metric("Claims", f"{q.claim_id.nunique():,}", help="Train/test splits are made by claim, so no claim is on both sides")
     st.markdown(f"""
-- **Conflicting rows within a quote:** {int(q.conflicting_rows.sum()):,} quotes have rows with different labels (e.g. the same building as House in one row and Commercial in another). Each category is resolved by majority vote (ties → first row), and `n_coverage_rows` / `conflicting_rows` are kept as model features. Keeping all labels as flags gave no accuracy gain.
+- **Conflicting rows within a quote:** {int(raw.drop_duplicates().groupby("quote_id")[VOTE_COLS].nunique().gt(1).any(axis=1).sum()):,} quotes have rows with different labels (e.g. the same building as House in one row and Commercial in another). Each category is resolved by majority vote (ties → first row). Both models use only the raw inspection-time columns (plus the quoted amount for the rejection model). Keeping all labels as flags gave no accuracy gain.
 - **Missing values and zeros are flagged, not filled in:** missing or zero estimate, missing building area / construction year.
 - **Rare inspection organisations grouped:** orgs with fewer than {C.RARE_ORG_MIN_COUNT} quotes become "OTHER" ({(q.inspection_org == "OTHER").sum():,} quotes).
 - **Outcome columns excluded from model inputs:** insurer / policyholder cost, decision and review flag are only known after the decision.
@@ -233,12 +236,14 @@ elif page.startswith("4"):
     st.subheader("Quote vs fair price: the gap is the signal")
     st.markdown("The fair-cost model only sees **inspection data, never the quote itself**, so the gap between "
                 "the quote and the predicted price is informative. A more accurate model means a narrower normal "
-                "range: real outliers stand out and fewer normal quotes are flagged by mistake.")
-    g = q.assign(ratio=q.contractor_cost / q.fair_p50)
+                "range: real outliers stand out and fewer normal quotes are flagged by mistake. "
+                "Counted per claim (latest quote), so revised quotes of the same repair are not added up twice.")
+    fc = M["fair_claims"]
+    g = fc.assign(ratio=fc.contractor_cost / fc.fair_p50)
     g["gap"] = pd.cut(g.ratio, [0, .5, .8, 1.25, 2, 1e9],
                       labels=["<0.5×", "0.5–0.8×", "0.8–1.25× (close)", "1.25–2×", ">2×"])
-    gt = g.groupby("gap", observed=True).agg(quotes=("ratio", "size"), review_rate=("manual_review", "mean"))
-    gt["share"] = gt.quotes / len(g)
+    gt = g.groupby("gap", observed=True).agg(claims=("ratio", "size"), review_rate=("manual_review", "mean"))
+    gt["share"] = gt.claims / len(g)
     gt["rejection_rate_if_reviewed"] = g[g.manual_review].groupby("gap", observed=True).rejected.mean()
     gt["excess_m"] = (g.assign(ex=(g.contractor_cost - g.fair_p50).clip(lower=0))
                        .groupby("gap", observed=True).ex.sum() / 1e6)
@@ -246,20 +251,20 @@ elif page.startswith("4"):
     far = g[g.ratio > 2]
     far_auto = far[~far.manual_review]
     k = st.columns(3)
-    k[0].metric("Quotes close to fair price (0.8–1.25×)", f"{(g.ratio.between(.8, 1.25)).mean():.0%}",
+    k[0].metric("Claims close to fair price (0.8–1.25×)", f"{(g.ratio.between(.8, 1.25)).mean():.0%}",
                 help="Candidates for automatic approval")
-    k[1].metric("Quotes > 2× fair price, approved without review", f"{len(far_auto)} of {len(far)}")
+    k[1].metric("Claims > 2× fair price, approved without review", f"{len(far_auto)} of {len(far)}")
     k[2].metric("Their amount above fair price", f"€{(far_auto.contractor_cost - far_auto.fair_p50).sum() / 1e6:.0f}M",
                 help="Candidate saving, not proven – needs an audit")
     gap_colors = alt.Scale(domain=list(gt.gap.astype(str)), range=[GREY, GREY, GREEN, ORANGE, "#c05621"])
     c1, c2 = st.columns(2)
     c1.altair_chart(alt.Chart(gt.assign(gap=gt.gap.astype(str))).mark_bar().encode(
         x=alt.X("gap:N", sort=None, title="Quote ÷ fair price (p50)", axis=alt.Axis(labelAngle=0)),
-        y=alt.Y("share:Q", axis=alt.Axis(format="%"), title="Share of quotes"),
+        y=alt.Y("share:Q", axis=alt.Axis(format="%"), title="Share of claims"),
         color=alt.Color("gap:N", scale=gap_colors, legend=None),
-        tooltip=["gap", "quotes", alt.Tooltip("share", format=".0%"), alt.Tooltip("review_rate", format=".0%"),
+        tooltip=["gap", "claims", alt.Tooltip("share", format=".0%"), alt.Tooltip("review_rate", format=".0%"),
                  alt.Tooltip("rejection_rate_if_reviewed", format=".1%")]).properties(
-        height=300, title="Share of quotes"), width="stretch")
+        height=300, title="Share of claims"), width="stretch")
     c2.altair_chart(alt.Chart(gt.assign(gap=gt.gap.astype(str))).mark_bar().encode(
         x=alt.X("gap:N", sort=None, title="Quote ÷ fair price (p50)", axis=alt.Axis(labelAngle=0)),
         y=alt.Y("excess_m:Q", title="€M"),
@@ -267,9 +272,9 @@ elif page.startswith("4"):
         tooltip=["gap", alt.Tooltip("excess_m", format=".1f", title="€M above fair price"),
                  alt.Tooltip("review_rate", format=".0%", title="reviewed today")]).properties(
         height=300, title="Amount above fair price (€M)"), width="stretch")
-    st.caption("Close quotes → auto-approve. Far above → review. Today quotes far above the fair price are reviewed "
-               "no more often than normal ones (≈26% vs 21%). Rejection rate when reviewed: ≈8% for close quotes vs "
-               "≈13% far above – a real but weak signal.")
+    st.caption("Close claims → auto-approve. Far above → review. Today claims priced over 2× the fair price are reviewed "
+               "only slightly more often than close ones (≈28% vs 24%). Rejection rate when reviewed: ≈5% for close "
+               "claims vs ≈17% for those over 2× – a real signal, but based on only 35 rejected claims.")
 
     st.subheader("Review effort vs rejected € caught")
     scores = {"model: P(reject) × quote": r.priority,
@@ -336,9 +341,7 @@ elif page.startswith("5"):
             building_geographical_location=location, building_type=building_type, quote_event=quote_event,
             estimated_repair_cost=est or np.nan, inspection_images=images,
             building_area=area or np.nan, construction_year=year or np.nan,
-            insurance_excess_amount=excess, n_coverage_rows=1,
-            quote_seq=1 if quote_event == "preliminary quote" else 2,
-            est_missing=int(est == 0), est_zero=0, area_missing=int(area == 0), year_missing=int(year == 0),
+            insurance_excess_amount=excess,
             contractor_cost=quote)])
         row = add_quote_features(row).join(predict_fair(M["fair"], row))
         p_rej = float(score_all(M["rej_model"], row).iloc[0])
@@ -446,8 +449,8 @@ elif page.startswith("7"):
     st.subheader("Does ML help reduce future claims costs? Partly.")
     a, b = st.columns(2)
     a.success("""**Where it helps (supported by the data)**
-- **Better price benchmark:** the fair-cost model halves the error of the inspector estimate (≈€22k vs €41k).
-- **Smarter review effort:** about half of quotes are close to the fair price and could be auto-approved, while 220 of 297 quotes priced over 2× their fair cost went through without review (≈€17M above the fair price).
+- **Better price benchmark:** the fair-cost model (one quote per claim) halves the error of the inspector estimate (≈€22k vs €37k).
+- **Smarter review effort:** about half of claims are close to the fair price and could be auto-approved, while 146 of 204 claims priced over 2× their fair cost went through without review (≈€10M above the fair price, counting one quote per claim).
 - **Partner insight:** inspection orgs' estimates range from ≈0.5× to 1.8× the final bill, which is a lever even without ML.""")
     b.warning("""**Where it doesn't (yet)**
 - **Rejection model ≈ simple rule:** it catches 79% vs 77% of rejected € at a 20% review budget.
