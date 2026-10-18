@@ -9,7 +9,7 @@ Two models:
 
 | Model | Question | Data | Method |
 |---|---|---|---|
-| **A – Fair-cost model** | What should this repair cost, given what the inspection saw? | all approved quotes | Quantile gradient boosting (p50 and p90) on log cost |
+| **A – Fair-cost model** | What should this repair cost, given what the inspection saw? | one quote per approved claim (final quote preferred) | Quantile gradient boosting (p50 and p90) on log cost |
 | **B – Rejection model** | How likely is a reviewer to reject this quote? | manually reviewed quotes only (70 rejections) | L2-regularised logistic regression |
 
 `priority_eur = p_reject × quoted amount` ranks quotes for review. Quotes above the fair-cost p90 are flagged too.
@@ -39,7 +39,7 @@ Run `deactivate` to leave the venv.
 notebooks/01_data_exploration.ipynb   step-by-step EDA with findings (run before the pipeline)
 app.py            Streamlit demo: problem, data issues, explorer, model results, quote checker, review queue, verdict
 src/config.py     paths, feature lists, leakage list
-src/data.py       load, data-quality report, cleaning, collapse to one row per quote
+src/data.py       load, data-quality report, cleaning, collapse to one row per quote / per claim
 src/features.py   quote vs estimate features, feature matrix
 src/eda.py        figures 01–04 + EDA tables
 src/models.py     Model A (fair cost) and Model B (rejection), grouped out-of-fold CV
@@ -64,8 +64,13 @@ Models train once on first load (about 1 minute) and are then cached.
 - **Unit = quote.** Rows sharing a quote_id have the same contractor cost, estimate, decision and
   review flag, so they are collapsed to one row. About 12% of quotes have rows with conflicting
   categories (e.g. House vs Commercial for the same building); each category is resolved by majority
-  vote (ties -> first row), and `n_coverage_rows` and `conflicting_rows` are kept as features
-  (documented in `data.py`).
+  vote (ties -> first row; documented in `data.py`). The fair-cost model uses only the raw
+  inspection-time columns (`CATEGORICAL` + `NUMERIC_PRE_QUOTE` in `config.py`).
+- **Fair-cost model on one quote per claim.** A claim's quotes are adjusted over time, so they are
+  revisions of the same repair. Model A is trained on one quote per claim, cleaned as in
+  `notebooks/01_data_exploration.ipynb`: the final quote if there is one, otherwise the latest
+  preliminary quote (`to_claim_level` in `data.py`). Every quote is still scored by the fold model
+  that did not see its claim, so the rejection model (Model B, all quotes) gets honest fair-cost inputs.
 - **Grouped CV by claim_id.** Quotes from the same claim never end up in both train and test.
 - **No leakage.** `insurance_company_cost`, `policyholder_cost`, `decision_on_quote` and
   `manual_review` are produced after the decision and are never used as features.
@@ -74,15 +79,17 @@ Models train once on first load (about 1 minute) and are then cached.
   the simple rule "review the largest quotes first".
 
 ## Results (out-of-fold, from this dataset)
-- **Model A:** MAE €22k vs €41k for "quote = inspector estimate"; median abs. % error 24% vs 45%.
-  Main drivers (out-of-fold permutation importance, `outputs/fair_cost_importance.csv`): insurance type (~29%),
-  damage type (~23%), inspector estimate (~17%), number of inspection images (~11%), quote stage (~9%),
-  inspection org (~6%). Building attributes add almost nothing.
-- **Model B** (coefficients in `outputs/rejection_coefficients.csv`): ROC-AUC 0.67 vs 0.65 for "largest quote first". At a 20% review budget it
+- **Model A** (2,390 claims, one quote each): MAE €22k vs €37k for "quote = inspector estimate";
+  median abs. % error 24% vs 47%. The p90 band holds 83% of bills (target 90%).
+  Main drivers (out-of-fold permutation importance, `outputs/fair_cost_importance.csv`): inspector estimate (~25%),
+  damage type (~20%), insurance type (~16%), quote stage (~16%), number of inspection images (~15%),
+  inspection org (~5%). Building attributes add almost nothing.
+- **Model B** (coefficients in `outputs/rejection_coefficients.csv`): ROC-AUC 0.66 vs 0.65 for "largest quote first". At a 20% review budget it
   catches 79% of rejected € vs 77% for the baseline. This is a small gain, which is expected
   with only 70 positive labels.
-- **Auto-processed quotes:** 17% are above the fair-cost p90. That's about €23M of quoted
-  amount above the p50 fair cost. This is a candidate saving, not a proven one: it needs an audit to confirm.
+- **Auto-processed claims:** 17.5% are above the fair-cost p90, about €14M above the p50 fair cost
+  (one quote per claim). Summed over all quotes it would be €22M, but that counts revised quotes of the
+  same repair several times. This is a candidate saving, not a proven one: it needs an audit to confirm.
 - **Inspection orgs differ a lot.** The median quote/estimate ratio ranges from 0.46 to 1.82 across orgs.
 
 ## Limitations
