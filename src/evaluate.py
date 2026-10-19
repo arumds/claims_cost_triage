@@ -68,6 +68,6 @@ def plot_head_to_head(curves: pd.DataFrame):
                 ls=":" if name.startswith("reference") else "-")
     ax.plot([0, 1], [0, 1], "--", color="#a0aec0", label="random")
     ax.set(xlabel="Share of quotes reviewed (ranked by score)", ylabel="Share of rejected € caught",
-           title="Primary rule vs fair-cost model\n(reviewed quotes with an estimate, out-of-fold)")
+           title="Primary rule vs secondary model\n(reviewed quotes with an estimate, out-of-fold)")
     ax.legend(loc="lower right", fontsize=8)
     save_fig(fig, "07_rule_vs_fair_cost.png")
