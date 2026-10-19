@@ -10,6 +10,7 @@ from .evaluate import save_fig
 BLUE, ORANGE, GREY = "#2b6cb0", "#dd6b20", "#a0aec0"
 
 
+
 def run_eda(q: pd.DataFrame) -> dict[str, pd.DataFrame]:
     tables = {}
     v = q[(q.estimated_repair_cost > 0)].copy()
