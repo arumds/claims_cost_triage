@@ -322,7 +322,7 @@ elif page.startswith("3"):
     e = eda_frame(claims)
     e["rejected"] = e.decision_on_quote.eq("rejected").astype(int)
     tabs = st.tabs(["Overview", "Contractor cost by feature", "Bill ÷ estimate by feature", "Feature distributions",
-                    "Inspection organisations", "Review & decisions", "Estimate vs quote (interactive)"])
+                    "Inspection organisations", "Review & decisions"])
 
     with tabs[0]:
         a, b = st.columns(2)
@@ -478,27 +478,6 @@ elif page.startswith("3"):
                 "nobody checks them. Review goes with high insurer cost, not with a large bill, so rejection labels come "
                 "from a biased sample. Rejected claims skew towards the largest bills, which is why 'largest bill first' "
                 "is a strong baseline.")
-
-    with tabs[6]:
-        f1, f2, f3 = st.columns(3)
-        dmg = f1.multiselect("Damage type", sorted(e.inspection_type.unique()), default=sorted(e.inspection_type.unique()))
-        bld = f2.multiselect("Building type", sorted(e.building_type.unique()), default=sorted(e.building_type.unique()))
-        rev = f3.selectbox("Review status", ["all", "manual review", "auto-processed"])
-        d = e[e.inspection_type.isin(dmg) & e.building_type.isin(bld) & (e.estimated_repair_cost > 0)].copy()
-        if rev != "all":
-            d = d[d.manual_review == (rev == "manual review")]
-        d["status"] = np.where(d.rejected == 1, "rejected", np.where(d.manual_review, "reviewed – approved", "auto-approved"))
-        st.caption(f"{len(d):,} claims selected")
-        sc = alt.Chart(d).mark_circle(size=25, opacity=.5).encode(
-            x=alt.X("estimated_repair_cost:Q", scale=alt.Scale(type="log"), title="Inspector estimate (€)"),
-            y=alt.Y("contractor_cost:Q", scale=alt.Scale(type="log", domainMin=1000), title="Contractor quote (€)"),
-            color=alt.Color("status:N", scale=alt.Scale(domain=["auto-approved", "reviewed – approved", "rejected"],
-                                                        range=[GREY, BLUE, ORANGE])),
-            tooltip=["claim_id", "quote_id", "inspection_type", "estimated_repair_cost", "contractor_cost", "status"])
-        line = alt.Chart(pd.DataFrame({"x": [1e4, 4e5]})).mark_line(color="black", strokeDash=[4, 4]).encode(x="x", y="x")
-        st.altair_chart((sc + line).interactive(), width="stretch")
-        st.caption("Dashed line = bill equals estimate. Zoom and hover for details.")
-
 
 # ------------------------------------------------------------------ 4. hypotheses
 elif page.startswith("4"):
