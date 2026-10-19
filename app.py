@@ -840,7 +840,10 @@ elif page.startswith("6"):
 # ------------------------------------------------------------------ 7. review queue
 elif page.startswith("7"):
     st.title("Review queue")
-    share = st.slider("Review capacity (share of all quotes)", 0.05, 0.6, 0.23, 0.01)
+    today = int(q.manual_review.sum())
+    n = st.slider("How many quotes can the team review?", 0, len(q) // 5 * 5, today - today % 5, 5,
+                  help=f"Today the insurer reviewed {today:,} quotes, {today / len(q):.1%} of the {len(q):,} "
+                       f"in the file, which is the default here. The deck reports the same {today:,}.")
     rank_by = st.radio("Rank by", ["Primary rule: bill ÷ estimate", "Secondary: P(reject) × quote (€ at risk)"],
                        horizontal=True, help="Quotes without a usable estimate go last under the rule")
     key = "priority_eur" if rank_by.startswith("Secondary") else "rule_ratio"
@@ -849,10 +852,9 @@ elif page.startswith("7"):
         "expected € at risk: P(reject) × quote." if who == "model" else
         f"how far the bill is above the inspector estimate (flagged above {C.RULE_K}×). Quotes without an estimate go last."))
     ranked = q.sort_values(key, ascending=False, na_position="last").reset_index(drop=True)
-    n = int(share * len(ranked))
     top = ranked.head(n)
     c = st.columns(4)
-    c[0].metric("Quotes to review", f"{n:,}")
+    c[0].metric("Quotes to review", f"{n:,}", help=f"{n / len(q):.1%} of the {len(q):,} quotes in the file.")
     c[1].metric("Of which currently auto-approved", f"{(~top.manual_review).sum():,}")
     c[2].metric("Quoted € in queue", eur(top.contractor_cost.sum()))
     rej_eur = q.loc[q.rejected == 1, "contractor_cost"].sum()
