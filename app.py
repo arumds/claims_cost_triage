@@ -149,6 +149,9 @@ if page.startswith("1"):
     st.title("Can AI/ML help reduce claims costs?")
     st.markdown("**Short answer: partly yes.** A fair-cost model works with today's data; "
                 "a reliable *overpricing* detector needs better labels (a random audit).")
+    st.caption("With the number of reviews fixed, this is a ranking problem under a capacity constraint: order "
+               "the queue so the reviews catch as much unnecessary cost as possible, and measure success in euro "
+               "caught rather than accuracy.")
     c = st.columns(4)
     c[0].metric("Quotes", f"{len(q):,}")
     c[1].metric("Manually reviewed", f"{q.manual_review.mean():.0%}")
