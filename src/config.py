@@ -11,9 +11,8 @@ RANDOM_STATE = 42
 N_FOLDS = 5
 RARE_ORG_MIN_COUNT = 10          # inspection orgs with fewer quotes are grouped into "OTHER"
 COST_CAP = 300_000               # values piling up at this level look like a cap/truncation
-IMAGE_CAP = 300
 
-# Columns known BEFORE / AT the time the contractor quote arrives -> allowed as features.
+# Columns known before or when the contractor quote arrives, so they can be used as features.
 CATEGORICAL = [
     "inspection_org", "inspection_type", "insurance_type",
     "building_geographical_location", "building_type", "quote_event",
@@ -22,11 +21,8 @@ NUMERIC_PRE_QUOTE = [
     "estimated_repair_cost", "inspection_images", "building_area",
     "construction_year", "insurance_excess_amount",
 ]
-# Features that use the quoted amount itself (used by the rejection model only).
-QUOTE_FEATURES = ["contractor_cost", "log_quote_to_estimate", "quote_minus_estimate"]
-
-# Outcome columns: decided AFTER the quote is processed -> never use as features.
-LEAKY = ["insurance_company_cost", "policyholder_cost", "decision_on_quote", "manual_review"]
+# Never used as features: insurance_company_cost, policyholder_cost, decision_on_quote and manual_review
+# are only known after the quote has been processed.
 
 # Primary triage rule: review if bill > RULE_K × inspector estimate
 RULE_K = 1.25
