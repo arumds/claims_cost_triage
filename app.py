@@ -468,14 +468,7 @@ elif page.startswith("3"):
         c1.altair_chart(ch.properties(title="Reviewed claims have a much higher insurer cost…"), width="stretch")
         ch, _ = box_by(e[e.contractor_cost >= 100], "contractor_cost", "review", "Contractor cost, € (log scale)")
         c2.altair_chart(ch.properties(title="…but a smaller bill"), width="stretch")
-        st.markdown("**Rejection rate within review, by segment**")
         rv = e[e.manual_review]
-        for col_, c_ in zip(st.columns(3), ["inspection_type", "building_type", "quote_event"]):
-            col_.dataframe(pd.DataFrame({"review rate": e.groupby(c_).manual_review.mean(),
-                                         "reviewed": rv.groupby(c_).size(),
-                                         "rejected in review": rv.groupby(c_).rejected.mean()}),
-                           width="stretch", column_config={"review rate": st.column_config.NumberColumn(format="percent"),
-                                                           "rejected in review": st.column_config.NumberColumn(format="percent")})
         ch, _ = box_by(rv[rv.contractor_cost >= 100], "contractor_cost", "decision_on_quote", "Contractor cost, € (log scale)")
         st.altair_chart(ch.properties(title="Within review: rejected claims are larger"), width="stretch")
         st.info("**Takeaway:** all rejections happen in reviewed claims; auto-processed claims are never rejected because "
