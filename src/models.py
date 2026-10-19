@@ -22,10 +22,9 @@ def _regressor(quantile: float):
         categorical_features="from_dtype", random_state=C.RANDOM_STATE)
 
 
-
 def aligned_feature_matrix(df: pd.DataFrame, categories: dict) -> pd.DataFrame:
-    """Feature matrix whose categorical codes match the training categories (unseen -> OTHER)."""
-    X, _ = feature_matrix(df, include_quote=False)
+    """Feature matrix whose categorical codes match the training categories (unseen levels become OTHER)."""
+    X = feature_matrix(df)
     for c, cats in categories.items():
         X[c] = pd.Categorical(df[c].where(df[c].isin(cats), "OTHER" if "OTHER" in cats else cats[0]),
                               categories=cats)
@@ -38,11 +37,11 @@ def _with_excess(res: pd.DataFrame) -> pd.DataFrame:
     return res
 
 
-# ---------------------------------------------------------------- Model A
+# Model A
 def fair_cost_oof(claims: pd.DataFrame, q: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Out-of-fold predictions of the median (p50) and upper (p90) 'fair' quote, trained on unique claims.
     """
-    X, _ = feature_matrix(claims, include_quote=False)
+    X = feature_matrix(claims)
     categories = {c: X[c].cat.categories for c in C.CATEGORICAL}
     Xq = aligned_feature_matrix(q, categories)
     y = np.log1p(claims.contractor_cost.values)
@@ -146,10 +145,10 @@ def score_all(model, q: pd.DataFrame) -> pd.Series:
     return pd.Series(model.predict_proba(_rejection_frame(q))[:, 1], index=q.index, name="p_reject")
 
 
-# ---------------------------------------------------------------- final models for the app
+# Final models for the app
 def fit_fair_cost_models(claims: pd.DataFrame) -> dict:
     """Fit p50/p90 fair-cost models on all approved claims, one quote per claim (for scoring new quotes)."""
-    X, _ = feature_matrix(claims, include_quote=False)
+    X = feature_matrix(claims)
     keep = claims.decision_on_quote.ne("rejected").to_numpy()
     y = np.log1p(claims.contractor_cost.values)
     models = {qt: _regressor(qt).fit(X[keep], y[keep]) for qt in (.5, .9)}
@@ -164,7 +163,7 @@ def predict_fair(fair: dict, new: pd.DataFrame) -> pd.DataFrame:
                          "fair_p90": np.expm1(fair["models"][.9].predict(X))}, index=new.index)
 
 
-# ---------------------------------------------------------------- feature importance (Model A)
+# Feature importance (Model A)
 def fair_cost_importance(claims: pd.DataFrame, n_repeats: int = 3) -> pd.DataFrame:
     """Out-of-fold permutation importance for the p50 fair-cost model (one quote per claim).
 
@@ -172,7 +171,7 @@ def fair_cost_importance(claims: pd.DataFrame, n_repeats: int = 3) -> pd.DataFra
     feature at a time in the held-out part and measure how much the error (MAE of log cost)
     increases. Averaged over folds. Bigger increase = the model relies more on that feature.
     """
-    X, _ = feature_matrix(claims, include_quote=False)
+    X = feature_matrix(claims)
     y = np.log1p(claims.contractor_cost.values)
     imps = []
     for tr, te in GroupKFold(C.N_FOLDS).split(X, y, groups=claims.claim_id):
