@@ -144,18 +144,12 @@ Details: `outputs/` (`rule_vs_fair_cost.csv`, `fair_cost_metrics.csv`, `rejectio
 *Model results* page.
 
 ## Limitations
-- Rejection labels exist **only** for reviewed quotes, and review targets large claims.
-  The rejection model is therefore trained on a biased sample, and its scores on
-  auto-processed quotes are extrapolation.
-- There is no label for "how much was saved". Rejected/approved is a weak proxy.
-- Inspector estimates are bucketed to €10k (240 zeros, 3.5% missing). Building area is 50% missing.
-- Costs look capped at €300k. There are no dates, so time drift and time-based validation can't be checked.
-- Being overpriced relative to the fair cost does **not** predict rejection in this data
-  (negative coefficient). Rejections may be driven by coverage or policy reasons more than price.
+- **Biased labels:** only 70 rejections, all from reviews aimed at large claims; scores on auto-processed quotes are extrapolation.
+- **No savings label:** approved/rejected is a weak proxy, and overpricing does not predict rejection in this data.
+- **Coarse data:** estimates bucketed to €10k, building area 50% missing, costs capped at €300k, no dates.
 
 ## Next steps
-1. **Random audit** of ~5% of auto-approved quotes to get unbiased labels. This is the main recommendation.
-2. Record the **approved amount after review** so savings can be modelled as a regression target.
-3. Add claim/quote dates, quote line items and inspection images (CV model on photos).
-4. Use inspection-org level feedback as a lever separate from claim triage.
-5. Calibrate p90 (coverage is currently 83%) with conformal prediction. Monitor drift and contractor behaviour after deployment.
+1. **Random audit** of ~5% of auto-approved quotes for unbiased labels and a measured saving (main recommendation).
+2. **Record the approved amount and rejection reason** after review.
+3. **Add dates, quote line items and inspection photos.**
+4. **Calibrate the p90 band** (covers 83%, target 90%) and monitor after deployment.
