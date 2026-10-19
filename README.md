@@ -16,6 +16,36 @@ A transparent rule first, two models on top:
 `priority_eur = p_reject × quoted amount` ranks quotes for review. Quotes above the fair-cost p90 are flagged too.
 The rule and the models are compared head to head on the same reviewed quotes (`src/triage.py`).
 
+**Today** review is picked by insurer cost, not by the bill (counts per claim):
+```mermaid
+flowchart TB
+    insp[Inspection<br/>estimate, photos, damage type] --> quote[Contractor quote arrives]
+    quote --> sel{Picked for review?<br/>goes with insurer cost}
+    sel -- yes --> rev[Manual review<br/>24% of claims]
+    sel -- no --> auto[Auto-approved<br/>76% of claims, never checked]
+    rev --> dec[Approve or reject<br/>6% of reviewed rejected]
+    style auto fill:#fde8d7,stroke:#dd6b20
+```
+
+**Proposed:** the rule catches large overruns, then every other bill is compared with a fair price:
+```mermaid
+flowchart TB
+    insp[Inspection<br/>estimate, photos, damage type] --> fair[Fair-cost model<br/>fair price p50 and p90]
+    insp --> quote[Contractor quote arrives]
+    quote --> rule{"Primary rule<br/>bill > 1.25× estimate?"}
+    rule -- yes --> rev[Manual review<br/>rule flag, above p90 or largest bills]
+    rule -- no --> cmp{Bill vs fair price?}
+    fair --> cmp
+    cmp -- close --> fast[Fast approval<br/>0.8–1.25× fair]
+    cmp -- too high --> rev
+    rev --> out[Approve, negotiate or reject<br/>record the approved amount]
+    fast -.-> audit[Random audit ~5%<br/>measures the real saving]
+    out -. retrain .-> fair
+    style fair fill:#e6effa,stroke:#3182ce
+    style rule fill:#fdf2e9,stroke:#dd6b20
+    style fast fill:#e6f4ea,stroke:#38a169
+```
+
 ## Setup (Python 3.10+)
 macOS / Linux:
 ```bash
@@ -82,31 +112,20 @@ Models train once on first load (about 1 minute) and are then cached.
   the simple rule "review the largest quotes first".
 
 ## Results (out-of-fold, from this dataset)
-- **Model A** (2,390 claims, one quote each): MAE €22k vs €37k for "quote = inspector estimate";
-  median abs. % error 24% vs 47%. The p90 band holds 83% of bills (target 90%).
-  Main drivers (out-of-fold permutation importance, `outputs/fair_cost_importance.csv`): inspector estimate (~25%),
-  damage type (~20%), insurance type (~16%), quote stage (~16%), number of inspection images (~15%),
-  inspection org (~5%). Building attributes add almost nothing.
-- **Model B** (coefficients in `outputs/rejection_coefficients.csv`): ROC-AUC 0.66 vs 0.65 for "largest quote first". At a 20% review budget it
-  catches 79% of rejected € vs 77% for the baseline. This is a small gain, which is expected
-  with only 70 positive labels.
-- **Primary rule vs fair-cost model** (`outputs/rule_table.csv`, `rule_vs_fair_cost.csv`, `queue_overlap.csv`,
-  figure 07; 762 reviewed quotes with an estimate, 67 rejected, out-of-fold):
+Primary rule vs secondary model on the same 762 reviewed quotes with an estimate (67 rejected):
 
-  | Approach | ROC-AUC | rejected € caught @ 20% budget |
-  |---|---|---|
-  | primary: rule, bill ÷ estimate | 0.54 | 33% |
-  | secondary: fair-cost + P(reject) × bill | 0.68 | 80% |
+| Approach | ROC-AUC | Rejected € caught @ 20% budget |
+|---|---|---|
+| primary: rule, bill ÷ estimate | 0.54 | 33% |
+| secondary: fair-cost + P(reject) × bill | 0.68 | 80% |
 
-  At k = 1.25 the rule flags 45% of quotes and catches 97% of severe overruns (> €20k over the estimate), but only
-  21% of the quotes reviewers rejected; 9% of quotes have no usable estimate and can't be scored. The model beats the
-  rule, but almost all of its gain comes from looking at the biggest bills first: the price gap alone, rule or fair-cost,
-  does not predict rejection. At the same budget the two queues agree on 43% of quotes (Jaccard); the model's queue
-  holds 89% of the € above fair p90 vs 76% for the rule (a yardstick that favours the model).
-- **Auto-processed claims:** 17.5% are above the fair-cost p90, about €14M above the p50 fair cost
-  (one quote per claim). Summed over all quotes it would be €22M, but that counts revised quotes of the
-  same repair several times. This is a candidate saving, not a proven one: it needs an audit to confirm.
-- **Inspection orgs differ a lot.** The median quote/estimate ratio ranges from 0.46 to 1.82 across orgs.
+- **The model beats the rule, mostly by looking at the biggest bills first.** The price gap alone (rule or fair-cost)
+  barely predicts rejection. The rule (k = 1.25) still catches 97% of severe overruns (> €20k over the estimate).
+- **Fair-cost model (A):** MAE €22k vs €37k for "quote = estimate"; the p90 band holds 83% of bills (target 90%).
+- **Auto-processed claims:** 17.5% are above fair p90, about €14M above fair p50: a candidate saving that needs an audit.
+
+Details: `outputs/` (`rule_vs_fair_cost.csv`, `fair_cost_metrics.csv`, `rejection_metrics.csv`, …) and the app's
+*Model results* page.
 
 ## Limitations
 - Rejection labels exist **only** for reviewed quotes, and review targets large claims.
