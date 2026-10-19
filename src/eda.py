@@ -5,16 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from . import config as C
+from .evaluate import save_fig
 
 BLUE, ORANGE, GREY = "#2b6cb0", "#dd6b20", "#a0aec0"
-
-
-def _save(fig, name):
-    C.FIG_DIR.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(C.FIG_DIR / name, dpi=150)
-    plt.close(fig)
 
 
 def run_eda(q: pd.DataFrame) -> dict[str, pd.DataFrame]:
@@ -31,7 +24,7 @@ def run_eda(q: pd.DataFrame) -> dict[str, pd.DataFrame]:
            xlabel="Inspector estimate (€)", ylabel="Contractor quote (€)",
            title="Estimates are coarse and only loosely predict quotes")
     ax.legend()
-    _save(fig, "01_estimate_vs_quote.png")
+    save_fig(fig, "01_estimate_vs_quote.png")
 
     # 2. Quote/estimate ratio by damage type
     order = v.groupby("inspection_type").ratio.median().sort_values().index
@@ -40,7 +33,7 @@ def run_eda(q: pd.DataFrame) -> dict[str, pd.DataFrame]:
                tick_labels=order, vert=False, showfliers=False)
     ax.axvline(1, color=ORANGE, lw=1)
     ax.set(xlabel="Contractor quote / inspector estimate", title="Estimate accuracy by damage type")
-    _save(fig, "02_ratio_by_damage_type.png")
+    save_fig(fig, "02_ratio_by_damage_type.png")
 
     # 3. Inspection organisations differ systematically
     org = (v[v.inspection_org != "OTHER"].groupby("inspection_org")
@@ -51,7 +44,7 @@ def run_eda(q: pd.DataFrame) -> dict[str, pd.DataFrame]:
     ax.barh(org.index, org.median_ratio, color=[ORANGE if r > 1.3 else BLUE for r in org.median_ratio])
     ax.axvline(1, color="black", lw=.8)
     ax.set(xlabel="Median quote / estimate", title="Inspection orgs (≥30 quotes)")
-    _save(fig, "03_inspection_org_ratio.png")
+    save_fig(fig, "03_inspection_org_ratio.png")
 
     # 4. Review is not random: big claims are reviewed
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -62,7 +55,7 @@ def run_eda(q: pd.DataFrame) -> dict[str, pd.DataFrame]:
     ax.set(xscale="log", xlabel="Insurer cost (€)", ylabel="density",
            title="Manual review targets large claims (selection bias)")
     ax.legend()
-    _save(fig, "04_review_selection.png")
+    save_fig(fig, "04_review_selection.png")
 
     # 5. Rejection rate (reviewed quotes only) by segment
     r = q[q.manual_review]
