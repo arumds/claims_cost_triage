@@ -1,9 +1,10 @@
 # Claims cost reduction – review triage model
 
 ## Business problem → data science problem
-Only ~23% of quotes are manually reviewed. The goal is to send the **right** quotes to review:
-score every incoming contractor quote by *expected rejected value* and route the top of the
-ranking to a reviewer, auto-approving the rest.
+Only ~23% of quotes are manually reviewed. With a fixed number of reviews, the goal is to order the queue
+so the reviews catch as much unnecessary cost as possible: a **ranking problem under a capacity constraint**,
+measured in euro rather than accuracy. Concretely, score every incoming contractor quote by *expected
+rejected value* and route the top of the ranking to a reviewer, auto-approving the rest.
 
 A transparent rule first, two models on top:
 
