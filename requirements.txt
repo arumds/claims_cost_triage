@@ -11,3 +11,4 @@ ipykernel>=6.0
 
 # Demo app
 streamlit>=1.46
+altair>=5.0

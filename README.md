@@ -47,38 +47,53 @@ flowchart TB
     style fast fill:#e6f4ea,stroke:#38a169
 ```
 
-## Setup (Python 3.10+)
-macOS / Linux:
+## Setup
+Tested with Python 3.12 on macOS. The dataset is included in `data/`, so no download is needed.
+```bash
+git clone <repo-url> claims_cost_triage
+cd claims_cost_triage
+```
+
+**Option A: venv + pip**
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## Run
+**Option B: conda**
 ```bash
-python run_pipeline.py                       # reads data/tech_data_2026.xlsx
-python run_pipeline.py path/to/tech_data_2026.xlsx
-jupyter lab notebooks/01_data_exploration.ipynb   # choose kernel "Python (claims-ml)"
-streamlit run app.py                              # interactive demo app
+conda env create -f environment.yml
+conda activate claims-cost-triage
 ```
-The pipeline runs in under a minute and writes everything to `outputs/`. The notebook reads
-`data/tech_data_2026.xlsx` by default; set the `CLAIMS_DATA` env variable to point elsewhere.
-Run `deactivate` to leave the venv.
+
+## Run
+With the environment active, from the project folder:
+```bash
+python run_pipeline.py                            # reads data/tech_data_2026.xlsx, writes outputs/
+python run_pipeline.py path/to/tech_data_2026.xlsx
+jupyter lab notebooks/01_data_exploration.ipynb   # default "Python 3" kernel
+streamlit run app.py                              # demo app, opens in the browser
+```
+The pipeline takes about a minute. The app trains its models on first load (about a minute) and caches them.
+The notebook and the app read `data/tech_data_2026.xlsx` by default; set the `CLAIMS_DATA` environment
+variable to use another file.
 
 ## Project layout
 ```
 notebooks/01_data_exploration.ipynb   step-by-step EDA with findings (run before the pipeline)
 app.py            Streamlit demo: problem, data issues, explorer, hypotheses, model results, quote checker, review queue, verdict
-src/config.py     paths, feature lists, leakage list
+src/config.py     paths, feature lists, rule settings
 src/data.py       load, data-quality report, cleaning, collapse to one row per quote / per claim
 src/features.py   quote vs estimate features, feature matrix
 src/eda.py        figures 01–04 + EDA tables
 src/models.py     Model A (fair cost) and Model B (rejection), grouped out-of-fold CV
-src/evaluate.py   capture curves, review-budget table, figures 05 and 07
+src/evaluate.py   capture curves, review-budget table, figures 05–07
 src/triage.py     primary rule (bill > k × estimate), rule table, head-to-head with the fair-cost model
 run_pipeline.py   end-to-end run
+data/             tech_data_2026.xlsx (the dataset)
+requirements.txt  pip dependencies; environment.yml wraps them for conda
 ```
 
 ## Demo app
@@ -92,8 +107,7 @@ run_pipeline.py   end-to-end run
 7. **Review queue**: all quotes ranked by the primary rule or by € at risk for a chosen review capacity, compared with today's reviews, downloadable as CSV
 8. **Verdict & next steps**: where ML helps and where it doesn't (yet), and approaches to explore with more time
 
-The app reads `data/tech_data_2026.xlsx` (or `CLAIMS_DATA`); if no file is found it offers an upload button.
-Models train once on first load (about 1 minute) and are then cached.
+If no data file is found, the app offers an upload button.
 
 ## Key modelling decisions
 - **Unit = quote.** Rows sharing a quote_id have the same contractor cost, estimate, decision and
