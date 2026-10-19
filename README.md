@@ -1,4 +1,4 @@
-# Claims cost reduction – review triage model
+# Claims cost triage: which quotes to review
 
 ## Business problem → data science problem
 Only ~23% of quotes are manually reviewed. With a fixed number of reviews, the goal is to order the queue
