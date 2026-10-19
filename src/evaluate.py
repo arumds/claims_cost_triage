@@ -8,6 +8,13 @@ import pandas as pd
 from . import config as C
 
 
+def save_fig(fig, name: str):
+    C.FIG_DIR.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(C.FIG_DIR / name, dpi=150)
+    plt.close(fig)
+
+
 def capture_curve(value: pd.Series, flag: pd.Series, score: pd.Series) -> pd.DataFrame:
     order = score.sort_values(ascending=False, kind="mergesort").index
     v = (value * flag).loc[order]
@@ -39,10 +46,7 @@ def plot_capture(r: pd.DataFrame, scores: dict[str, pd.Series]):
            ylabel="Share of rejected € caught",
            title="Review triage: value caught vs review effort\n(manually reviewed quotes, out-of-fold)")
     ax.legend(loc="lower right")
-    C.FIG_DIR.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(C.FIG_DIR / "05_capture_curve.png", dpi=150)
-    plt.close(fig)
+    save_fig(fig, "05_capture_curve.png")
 
 
 def plot_importance(imp: pd.DataFrame, top: int = 12):
@@ -54,22 +58,16 @@ def plot_importance(imp: pd.DataFrame, top: int = 12):
     ax.set_xlim(0, d.share_pct.max() * 1.12)
     ax.set(xlabel="Share of importance (%)",
            title="Fair-cost model: what drives the expected repair cost\n(out-of-fold permutation importance)")
-    C.FIG_DIR.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(C.FIG_DIR / "06_fair_cost_importance.png", dpi=150)
-    plt.close(fig)
+    save_fig(fig, "06_fair_cost_importance.png")
 
 
 def plot_head_to_head(curves: pd.DataFrame):
     fig, ax = plt.subplots(figsize=(6.5, 5))
-    for (name, cc), col in zip(curves.groupby("approach", sort=False), ["#dd6b20", "#38a169", "#2b6cb0", "#718096"]):
+    for (name, cc), col in zip(curves.groupby("approach", sort=False), ["#dd6b20", "#2b6cb0", "#718096"]):
         ax.plot(cc.share_reviewed, cc.share_value_caught, label=name, color=col, lw=2,
                 ls=":" if name.startswith("reference") else "-")
     ax.plot([0, 1], [0, 1], "--", color="#a0aec0", label="random")
     ax.set(xlabel="Share of quotes reviewed (ranked by score)", ylabel="Share of rejected € caught",
            title="Primary rule vs fair-cost model\n(reviewed quotes with an estimate, out-of-fold)")
     ax.legend(loc="lower right", fontsize=8)
-    C.FIG_DIR.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(C.FIG_DIR / "07_rule_vs_fair_cost.png", dpi=150)
-    plt.close(fig)
+    save_fig(fig, "07_rule_vs_fair_cost.png")
