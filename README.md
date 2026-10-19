@@ -1,5 +1,19 @@
 # Claims cost triage: which quotes to review
 
+## Summary
+- **Question:** with a fixed number of manual reviews, which contractor quotes should reviewers check?
+- **Primary rule** (review if bill > 1.25 × inspector estimate): simple and transparent, catches 97% of severe
+  overruns, but only **33%** of rejected € when the team reviews 20% of quotes.
+- **Secondary model** (fair cost + P(reject) × bill): **80%** of rejected € at the same effort. Most of the gain comes
+  from putting the biggest bills first ("largest bill first" alone gets 78%).
+- **Fair-cost model:** prices a repair with about half the error of the inspector estimate (MAE €22k vs €37k).
+- **Unchecked money:** 146 of 204 claims billed at over 2× the fair price were never reviewed (≈€10M above it).
+  That saving is unproven until a **random audit** checks it, which is the main recommendation.
+
+![Share of rejected € caught at each review budget: secondary model vs primary rule](images/rule_vs_model.png)
+
+Start with `notebooks/02_models_and_triage.ipynb` for the full walk-through, or run the app (below).
+
 ## Business problem → data science problem
 Only ~23% of quotes are manually reviewed. With a fixed number of reviews, the goal is to order the queue
 so the reviews catch as much unnecessary cost as possible: a **ranking problem under a capacity constraint**,
@@ -73,16 +87,17 @@ With the environment active, from the project folder:
 ```bash
 python run_pipeline.py                            # reads data/tech_data_2026.xlsx, writes outputs/
 python run_pipeline.py path/to/tech_data_2026.xlsx
-jupyter lab notebooks/01_data_exploration.ipynb   # default "Python 3" kernel
+jupyter lab notebooks/                           # 01 EDA, 02 models and triage (default "Python 3" kernel)
 streamlit run app.py                              # demo app, opens in the browser
 ```
 The pipeline takes about a minute. The app trains its models on first load (about a minute) and caches them.
-The notebook and the app read `data/tech_data_2026.xlsx` by default; set the `CLAIMS_DATA` environment
+The notebooks and the app read `data/tech_data_2026.xlsx` by default; set the `CLAIMS_DATA` environment
 variable to use another file.
 
 ## Project layout
 ```
-notebooks/01_data_exploration.ipynb   step-by-step EDA with findings (run before the pipeline)
+notebooks/01_data_exploration.ipynb   step-by-step EDA with findings
+notebooks/02_models_and_triage.ipynb  rule, fair-cost and rejection models, head-to-head, audit candidates
 app.py            Streamlit demo: problem, data issues, explorer, hypotheses, model results, quote checker, review queue, verdict
 src/config.py     paths, feature lists, rule settings
 src/data.py       load, data-quality report, cleaning, collapse to one row per quote / per claim
@@ -92,6 +107,7 @@ src/models.py     Model A (fair cost) and Model B (rejection), grouped out-of-fo
 src/evaluate.py   capture curves, review-budget table, figures 05–07
 src/triage.py     primary rule (bill > k × estimate), rule table, head-to-head with the fair-cost model
 run_pipeline.py   end-to-end run
+images/           figures used in this README
 data/             tech_data_2026.xlsx (the dataset)
 requirements.txt  pip dependencies; environment.yml wraps them for conda
 ```
@@ -138,6 +154,9 @@ Primary rule vs secondary model on the same 762 reviewed quotes with an estimate
 - **The model beats the rule, mostly by looking at the biggest bills first.** The price gap alone (rule or fair-cost)
   barely predicts rejection. The rule (k = 1.25) still catches 97% of severe overruns (> €20k over the estimate).
 - **Fair-cost model (A):** MAE €22k vs €37k for "quote = estimate"; the p90 band holds 83% of bills (target 90%).
+  The inspector estimate, damage type, insurance type, quote stage and photo count drive it; building details barely matter.
+
+  ![Fair-cost model feature importance](images/fair_cost_importance.png)
 - **Auto-processed claims:** 17.5% are above fair p90, about €14M above fair p50: a candidate saving that needs an audit.
 
 Details: `outputs/` (`rule_vs_fair_cost.csv`, `fair_cost_metrics.csv`, `rejection_metrics.csv`, …) and the app's
