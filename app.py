@@ -908,7 +908,6 @@ elif page.startswith("8"):
     h2h = M["h2h"].set_index("approach")["rejected_eur_caught@20%"]
     rule_eur, model_eur = h2h["primary: rule  bill ÷ estimate"], h2h["secondary: fair-cost + P(reject) × bill"]
     bill_eur = h2h["reference: largest bill first"]
-    rk = M["rule_tbl"].set_index("trigger_k").loc[C.RULE_K]
     fc = M["fair_claims"]
     ratio = fc.contractor_cost / fc.fair_p50
     far = fc[ratio > 2]
@@ -916,49 +915,42 @@ elif page.startswith("8"):
     far_eur = (far_auto.contractor_cost - far_auto.fair_p50).sum() / 1e6
     ma = M["m_a"]
 
-    st.subheader("Does ML help reduce future claims costs? Partly.")
-    a, b = st.columns(2)
-    a.success(f"""**Where it helps (supported by the data)**
-- **Beats the rule at the same review effort:** reviewing the top 20%, the model catches {model_eur:.0%} of rejected € vs {rule_eur:.0%} for the bill ÷ estimate rule.
-- **Better price benchmark:** the fair-cost model halves the error of the inspector estimate ({eur(ma.MAE_eur.iloc[1])} vs {eur(ma.MAE_eur.iloc[0])}), and it prices the {M['overlap'].value.iloc[-1]:.0%} of quotes the rule can't score (no estimate).
-- **Finds bills nobody checked:** {len(far_auto)} of {len(far)} claims priced over 2× their fair cost were approved without review (≈€{far_eur:.0f}M above the fair price, one quote per claim), while {ratio.between(.8, 1.25).mean():.0%} of claims are close to it and could be fast-approved.
-- **Partner insight:** depending on the inspection org, the typical bill is ≈0.5× to 1.8× the estimate, a lever even without ML.""")
-    b.warning(f"""**Where it doesn't (yet)**
-- **The win comes from bill size, not the price gap:** "largest bill first" alone catches {bill_eur:.0%}. Reviewers' rejections don't follow overpricing in this data.
-- **The rule alone is weak:** it flags {rk.flagged_share:.0%} of quotes yet catches only {rk.rejected_caught_if_reviewed:.0%} of rejections.
-- **Savings not proven:** there's no "correct price" label, and auto-approved quotes were never checked.
-- **Biased labels:** only {M['m_b'].n_rejected.iloc[0]} rejections, all from reviews that mostly targeted large claims.
-- **Algorithm isn't the bottleneck:** LightGBM tested as a robustness check, no significant gain over the current model.""")
-    st.info("**Recommendation, in layers:** (1) run the **rule** now as a transparent floor; (2) rank the review queue "
-            "with the **fair-cost + rejection model** on top, since it catches far more rejected € for the same effort; "
-            "(3) start a **random audit** of auto-approved claims above the fair price, and record the approved amount "
-            "after review. Better data, not a better algorithm, is what unlocks and proves the saving.")
+    st.subheader("Does ML help reduce claims costs? Partly.")
+    c = st.columns(3)
+    c[0].metric("Rejected € caught, top 20% reviewed", f"{model_eur:.0%}",
+                delta=f"{(model_eur - rule_eur) * 100:+.0f} pts vs the rule", delta_color="normal")
+    c[1].metric("Fair-cost model error (MAE)", eur(ma.MAE_eur.iloc[1]),
+                delta=f"vs {eur(ma.MAE_eur.iloc[0])} for the estimate", delta_color="off")
+    c[2].metric("Unchecked bills over 2× fair price", f"{len(far_auto)} claims",
+                delta=f"≈€{far_eur:.0f}M above fair price", delta_color="off")
 
-    st.subheader("Approaches I would explore with more time")
-    t1, t2, t3, t4 = st.tabs(["📋 Better data & labels", "🧠 Better models & rules", "🤝 Beyond single claims",
-                              "🚀 Putting it into practice"])
-    t1.markdown("""*Highest impact.*
-- **Random audit** of ~5% of auto-approved quotes, to get unbiased labels and measure true savings.
-- **Record the approved amount after review**, so savings become a regression target instead of approve/reject.
-- **Record why a quote was rejected** (price, coverage, policy), to separate overpricing from other reasons.
-- **Add dates**, to check price changes over time and validate on later claims instead of random splits.
-- **Itemised quote lines** (materials, labour, hours), to flag specific inflated items, not just a high total.""")
-    t2.markdown(f"""
-- **Tune the rule per segment:** the bill ÷ estimate ratio differs by damage type (fire and building damage run
-  above the estimate, water below), so one k = {C.RULE_K} over-flags some segments and misses others.
-- **Rule in €, not only as a ratio:** e.g. bill − estimate above a threshold, so small bills with a high ratio don't fill the queue.
-- **Cost-sensitive review rule:** review only when the expected saving is bigger than the cost of a review.
-- **Calibrated price ranges** with conformal prediction (p90 currently covers {ma.p90_coverage.iloc[1]:.0%}, target 90%).
-- **Image models** on inspection photos to estimate damage severity, instead of only counting photos.
-- **Text from inspection reports and quotes** (NLP / LLMs) to extract the scope of work.""")
-    t3.markdown("""
-- **Feedback to inspection organisations** on how accurate their estimates are.
-- **Contractor price monitoring:** contractors whose bills regularly sit above the fair cost.
-- **Negotiate preliminary quotes** against the fair price before the repair starts.
-- **Steer claims to preferred contractors** at inspection time when the predicted cost is high.
-- **Watch preliminary → final quote changes**, to catch costs that creep upward.""")
-    t4.markdown("""
-- **Start with the rule, shadow-run the model:** score every new quote with both and compare the queues before switching.
-- **Pilot / A/B test:** route new quotes by rule vs model vs today's process; compare € saved per review hour.
-- **Explainable flags for reviewers:** show the fair price, the p90 band and why the quote was flagged.
-- **Monitoring:** data drift, p90 calibration, fairness across contractors and regions, and behaviour changes once contractors know the rules.""")
+    a, b = st.columns(2)
+    a.success(f"""**Where it helps**
+- **Better review queue:** {model_eur:.0%} vs {rule_eur:.0%} of rejected € for the same effort. Most of the gain is bill
+  size: "largest bill first" alone gets {bill_eur:.0%}.
+- **Better price benchmark:** half the error of the inspector estimate, and it also prices the
+  {M['overlap'].value.iloc[-1]:.0%} of quotes without an estimate.
+- **Finds bills nobody checked:** {len(far_auto)} of {len(far)} claims over 2× their fair price were never reviewed.""")
+    b.warning(f"""**Where it doesn't (yet)**
+- **Overpricing doesn't predict rejection:** reviewers' decisions don't follow the price gap in this data.
+- **Savings are not proven:** there is no "correct price" label and auto-approved quotes were never checked.
+- **Few, biased labels:** only {M['m_b'].n_rejected.iloc[0]} rejections, all from reviews aimed at large claims.""")
+
+    st.info("**Recommendation:** (1) run the **rule** now as a transparent floor; (2) rank the review queue with the "
+            "**model**; (3) start a **random audit** of auto-approved claims above the fair price and record the "
+            "approved amount after review. Better data, not a better algorithm, is what proves the saving.")
+
+    st.subheader("With more time")
+    st.markdown(f"""
+1. **Random audit** of ~5% of auto-approved quotes: unbiased labels and a measured saving.
+2. **Record the approved amount and the rejection reason**, so savings become a target and price is separated from coverage.
+3. **Add dates and itemised quote lines**, to validate on later claims and flag specific inflated items.
+4. **Tune the rule per damage type and in €**, since one k = {C.RULE_K} over-flags some segments and misses others.
+5. **Shadow-run before switching:** score new quotes with rule and model side by side, then pilot and compare € saved per review hour.""")
+    with st.expander("More ideas"):
+        st.markdown(f"""
+- Calibrated price ranges with conformal prediction (p90 covers {ma.p90_coverage.iloc[1]:.0%}, target 90%).
+- Image models on inspection photos, and text from inspection reports and quotes.
+- Feedback to inspection organisations on estimate accuracy; monitor contractors whose bills sit above fair cost.
+- Negotiate preliminary quotes against the fair price; watch preliminary → final quote changes.
+- Explainable flags for reviewers, and monitoring for drift, calibration and contractor behaviour.""")
