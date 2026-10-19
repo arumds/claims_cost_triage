@@ -37,7 +37,6 @@ def rule_table(q: pd.DataFrame, triggers=C.RULE_TRIGGERS) -> pd.DataFrame:
 def h2h_scores(r: pd.DataFrame) -> dict[str, pd.Series]:
     """The scores compared head to head, all on the same rows (higher = review first)."""
     return {"primary: rule  bill ÷ estimate": r.rule_ratio,
-            "secondary: fair-cost gap  bill ÷ fair p50": r.contractor_cost / r.fair_p50,
             "secondary: fair-cost + P(reject) × bill": r.p_reject * r.contractor_cost,
             "reference: largest bill first": r.contractor_cost}
 
@@ -89,7 +88,7 @@ def queue_compare(r: pd.DataFrame, budget: float) -> tuple[pd.DataFrame, pd.Data
     Returns (one row per approach, the quotes with an in-queue flag per approach for plotting)."""
     r = r[r.rule_ratio.notna()].copy()
     n = int(np.ceil(budget * len(r)))
-    scores = {k: v for k, v in h2h_scores(r).items() if not k.startswith(("reference", "secondary: fair-cost gap"))}
+    scores = {k: v for k, v in h2h_scores(r).items() if not k.startswith("reference")}
     rows, flags = [], {}
     rej_eur = r.contractor_cost[r.rejected == 1].sum()
     for name, s in scores.items():
