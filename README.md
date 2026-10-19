@@ -70,7 +70,7 @@ Run `deactivate` to leave the venv.
 ## Project layout
 ```
 notebooks/01_data_exploration.ipynb   step-by-step EDA with findings (run before the pipeline)
-app.py            Streamlit demo: problem, data issues, explorer, model results, quote checker, review queue, verdict
+app.py            Streamlit demo: problem, data issues, explorer, hypotheses, model results, quote checker, review queue, verdict
 src/config.py     paths, feature lists, leakage list
 src/data.py       load, data-quality report, cleaning, collapse to one row per quote / per claim
 src/features.py   quote vs estimate features, feature matrix
@@ -82,14 +82,15 @@ run_pipeline.py   end-to-end run
 ```
 
 ## Demo app
-`streamlit run app.py` opens a browser app with seven pages:
-1. **Problem & approach**: the business → data science framing and headline numbers
+`streamlit run app.py` opens a browser app with eight pages:
+1. **Problem & approach**: the business → data science framing, today's and the proposed workflow, headline numbers
 2. **Data & limitations**: review rate by quote/estimate gap, selection bias, data-quality report
-3. **Explore the data**: interactive estimate vs quote scatter and inspection-org comparison, with filters
-4. **Model results**: model metrics, fair-cost feature importance, quote vs fair price gap, adjustable review-budget curve
-5. **Quote checker**: enter inspection details and a quote, get the fair-cost range, P(reject) and a review/approve recommendation (includes the claim 2 example)
-6. **Review queue**: all quotes ranked by € at risk for a chosen review capacity, compared with today's reviews, downloadable as CSV
-7. **Verdict & next steps**: where ML helps and where it doesn't (yet), and approaches to explore with more time
+3. **Explore the data**: cost and bill ÷ estimate by feature, feature distributions, inspection orgs, review & decisions
+4. **Hypotheses**: H1–H5, whether each holds and where to see the evidence
+5. **Model results**: primary rule, secondary models, the head-to-head at an adjustable review budget, unchecked overpricing (audit candidates)
+6. **Quote checker**: enter inspection details and a quote, get the fair-cost range, P(reject) and a review/approve recommendation (includes the claim 2 example)
+7. **Review queue**: all quotes ranked by the primary rule or by € at risk for a chosen review capacity, compared with today's reviews, downloadable as CSV
+8. **Verdict & next steps**: where ML helps and where it doesn't (yet), and approaches to explore with more time
 
 The app reads `data/tech_data_2026.xlsx` (or `CLAIMS_DATA`); if no file is found it offers an upload button.
 Models train once on first load (about 1 minute) and are then cached.
