@@ -1,5 +1,4 @@
 """Loading, cleaning and data-quality checks."""
-import numpy as np
 import pandas as pd
 
 from . import config as C
@@ -11,7 +10,7 @@ def load_raw(path=C.DATA_PATH) -> pd.DataFrame:
 
 
 def data_quality_report(df: pd.DataFrame) -> pd.DataFrame:
-    """One row per check -> easy to paste into the 'data limitations' slide."""
+    """One row per check, ready for the data limitations slide."""
     ident = (df.insurance_company_cost + df.policyholder_cost - df.contractor_cost).abs()
     rev = df[df.manual_review]
     checks = {
@@ -47,14 +46,6 @@ def data_quality_report(df: pd.DataFrame) -> pd.DataFrame:
 
 def clean(df: pd.DataFrame) -> pd.DataFrame:
     df = df.drop_duplicates().copy()
-    df["est_missing"] = df.estimated_repair_cost.isna().astype(int)
-    df["est_zero"] = (df.estimated_repair_cost == 0).astype(int)
-    df["area_missing"] = df.building_area.isna().astype(int)
-    df["year_missing"] = df.construction_year.isna().astype(int)
-    df["at_cost_cap"] = (df.contractor_cost >= C.COST_CAP).astype(int)
-    df["identity_breaks"] = (
-        (df.insurance_company_cost + df.policyholder_cost - df.contractor_cost).abs() >= 1
-    ).astype(int)
     for col in C.CATEGORICAL:
         df[col] = df[col].fillna("MISSING")
     return df
