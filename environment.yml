@@ -1,0 +1,9 @@
+# conda env create -f environment.yml && conda activate claims-cost-triage
+name: claims-cost-triage
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -r requirements.txt
