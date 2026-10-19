@@ -40,13 +40,7 @@ def _with_excess(res: pd.DataFrame) -> pd.DataFrame:
 
 # ---------------------------------------------------------------- Model A
 def fair_cost_oof(claims: pd.DataFrame, q: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Out-of-fold predictions of the median (p50) and upper (p90) 'fair' quote.
-
-    Trained on one quote per claim (to_claim_level): a claim's quotes are revisions of the same
-    repair, so training on all of them would count it several times. Uses only inspection-time
-    features, trained on approved claims. Every quote in `q` is scored by the fold model that did
-    not see its claim, so the rejection model still gets honest fair-cost inputs for all quotes.
-    Returns (quote-level predictions, claim-level predictions, claim-level metrics).
+    """Out-of-fold predictions of the median (p50) and upper (p90) 'fair' quote, trained on unique claims.
     """
     X, _ = feature_matrix(claims, include_quote=False)
     categories = {c: X[c].cat.categories for c in C.CATEGORICAL}
@@ -82,7 +76,7 @@ def fair_cost_oof(claims: pd.DataFrame, q: pd.DataFrame) -> tuple[pd.DataFrame, 
     return res_q.drop(columns="contractor_cost"), res, metrics
 
 
-# ---------------------------------------------------------------- Model B
+# Model B
 # Only ~70 rejected quotes exist (all in the manually reviewed set), so a strongly regularised,
 # low-variance model generalises better than boosting. inspection_org (≈60 levels) is left out
 # because with so few positives it overfits (tested: gradient boosting with org scored below the
