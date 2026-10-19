@@ -1,15 +1,14 @@
-"""End-to-end pipeline:  python run_pipeline.py [path/to/tech_data_2026.xlsx]   (default: data/tech_data_2026.xlsx)
+"""End-to-end pipeline: python run_pipeline.py [path/to/tech_data_2026.xlsx]
+(defaults to data/tech_data_2026.xlsx). All outputs go to outputs/.
 
-1. data-quality report          -> outputs/data_quality.csv
-2. cleaning + quote-level table (rejection model) + claim-level table (fair-cost model)
-3. EDA figures and tables       -> outputs/figures/, outputs/eda_*.csv
-4. Model A  fair-cost model (one quote per claim) -> outputs/fair_cost_metrics.csv, fair_cost_importance.csv,
-                                   figures/06_fair_cost_importance.png
-5. Model B  rejection model      -> outputs/rejection_metrics.csv, rejection_coefficients.csv
-6. Business evaluation          -> outputs/review_budget_table.csv, figures/05_capture_curve.png
-7. Score every quote            -> outputs/scored_quotes.csv (review priority list)
-8. Primary rule vs fair-cost    -> outputs/rule_table.csv, rule_vs_fair_cost.csv, queue_overlap.csv,
-                                   figures/07_rule_vs_fair_cost.png
+1. Data-quality report: data_quality.csv
+2. Cleaning, quote-level table (rejection model) and claim-level table (fair-cost model)
+3. EDA: figures 01-04 and eda_*.csv
+4. Model A, fair cost (one quote per claim): fair_cost_metrics.csv, fair_cost_importance.csv, figure 06
+5. Model B, rejection: rejection_metrics.csv, rejection_coefficients.csv
+6. Business evaluation: review_budget_table.csv, figure 05
+7. Score every quote: scored_quotes.csv (review priority list)
+8. Primary rule vs secondary model: rule_table.csv, rule_vs_fair_cost.csv, queue_overlap.csv, figure 07
 """
 import sys
 from pathlib import Path
@@ -82,7 +81,7 @@ def main(path=C.DATA_PATH):
     imp.to_csv(C.OUTPUT_DIR / "rejection_coefficients.csv", index=False)
     print("\n== Rejection model coefficients (standardised; odds ratio per 1 SD / category) ==\n", imp.head(10).to_string(index=False))
 
-    # Score every quote -> triage list. Scores on auto-processed quotes are an extrapolation
+    # Score every quote for the triage list. Scores on auto-processed quotes are an extrapolation
     # (model trained on the reviewed population only) and must be validated with a random audit.
     q["p_reject"] = score_all(model, q)
     q.loc[r.index, "p_reject"] = r.p_reject          # keep honest OOF scores where available
@@ -105,7 +104,7 @@ def main(path=C.DATA_PATH):
     # Primary rule vs secondary fair-cost model, head to head
     rt = rule_table(q)
     rt.to_csv(C.OUTPUT_DIR / "rule_table.csv", index=False)
-    print(f"\n== Primary rule: review if bill > k × estimate ==\n", rt.to_string(index=False))
+    print("\n== Primary rule: review if bill > k × estimate ==\n", rt.to_string(index=False))
     h2h, curves = head_to_head(r)
     h2h.to_csv(C.OUTPUT_DIR / "rule_vs_fair_cost.csv", index=False)
     plot_head_to_head(curves)
