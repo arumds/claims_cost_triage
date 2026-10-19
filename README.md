@@ -96,9 +96,7 @@ Models train once on first load (about 1 minute) and are then cached.
   | Approach | ROC-AUC | rejected € caught @ 20% budget |
   |---|---|---|
   | primary: rule, bill ÷ estimate | 0.54 | 33% |
-  | secondary: fair-cost gap, bill ÷ fair p50 | 0.53 | 38% |
   | secondary: fair-cost + P(reject) × bill | 0.68 | 80% |
-  | reference: largest bill first | 0.67 | 78% |
 
   At k = 1.25 the rule flags 45% of quotes and catches 97% of severe overruns (> €20k over the estimate), but only
   21% of the quotes reviewers rejected; 9% of quotes have no usable estimate and can't be scored. The model beats the
