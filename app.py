@@ -13,7 +13,6 @@ import streamlit as st
 
 from src import config as C
 from src.data import VOTE_COLS, clean, data_quality_report, load_raw, to_claim_level, to_quote_level
-from src.evaluate import budget_table, capture_curve
 from src.features import add_quote_features
 from src.models import (fair_cost_importance, fair_cost_oof, fit_fair_cost_models, fit_final_rejection_model,
                         predict_fair, rejection_oof, score_all)
@@ -23,7 +22,7 @@ st.set_page_config(page_title="Claims Cost Triage", page_icon="🏠", layout="wi
 ORANGE, BLUE, GREY, GREEN = "#dd6b20", "#2b6cb0", "#a0aec0", "#38a169"
 REVIEW_TOP_SHARE = 0.20      # top 20% by expected € at risk go to review
 
-# ------------------------------------------------------------------ EDA helpers (as in notebook 01, section 4)
+# EDA helpers (as in notebook 01, section 4)
 EDA_VARS = {
     "inspection_type": "Damage type", "inspection_org": "Inspection org (≥30 claims)",
     "estimate_bin": "Inspector estimate", "images_bin": "Inspection images",
@@ -82,7 +81,7 @@ def box_by(e: pd.DataFrame, value: str, var: str, title: str, ref: float | None 
     return chart.properties(height=alt.Step(34)), stats.reindex(order)
 
 
-# ------------------------------------------------------------------ data + models (cached)
+# Data + models (cached)
 def _data_path() -> Path:
     return Path(os.environ.get("CLAIMS_DATA", C.DATA_PATH))
 
@@ -136,7 +135,7 @@ M = train(str(path))
 q, r = M["q"], M["r"]
 eur = lambda x: f"€{x:,.0f}"
 
-# ------------------------------------------------------------------ navigation
+# Navigation
 st.sidebar.title("🏠 Claims Cost Triage")
 page = st.sidebar.radio("Go to", [
     "1 · Problem & approach", "2 · Data & limitations", "3 · Explore the data", "4 · Hypotheses",
@@ -144,7 +143,7 @@ page = st.sidebar.radio("Go to", [
 st.sidebar.caption(f"{len(raw):,} rows · {q.claim_id.nunique():,} claims · {len(q):,} quotes")
 
 
-# ------------------------------------------------------------------ 1. problem
+# 1. Problem
 if page.startswith("1"):
     st.title("Can AI/ML help reduce claims costs?")
     st.markdown("**Short answer: partly yes.** A fair-cost model works with today's data; "
@@ -219,7 +218,7 @@ if page.startswith("1"):
                 "**Success metric:** share of rejected € caught for a given review effort, rule vs model head to head.")
 
 
-# ------------------------------------------------------------------ 2. data & limitations
+# 2. Data & limitations
 elif page.startswith("2"):
     st.title("Data & limitations")
     no_est = ~claims.estimated_repair_cost.gt(0)
@@ -314,7 +313,7 @@ elif page.startswith("2"):
         st.dataframe(dq, hide_index=True, width="stretch")
 
 
-# ------------------------------------------------------------------ 3. explore
+# 3. Explore
 elif page.startswith("3"):
     st.title("Explore the data")
     st.caption(f"The exploration from `notebooks/01_data_exploration.ipynb`, on the cleaned data: one quote per claim "
@@ -479,7 +478,7 @@ elif page.startswith("3"):
                 "from a biased sample. Rejected claims skew towards the largest bills, which is why 'largest bill first' "
                 "is a strong baseline.")
 
-# ------------------------------------------------------------------ 4. hypotheses
+# 4. Hypotheses
 elif page.startswith("4"):
     st.title("Hypotheses: what we set out to show")
     st.markdown("**Goal:** pay less for repairs without reviewing more claims. The exploration raised these "
@@ -535,7 +534,7 @@ elif page.startswith("4"):
     st.caption("Results are computed live from the data and models.")
 
 
-# ------------------------------------------------------------------ 5. model results
+# 5. Model results
 elif page.startswith("5"):
     st.title("Model results")
     st.caption("All numbers are out-of-fold: every quote is scored by a model that never saw its claim.")
@@ -544,7 +543,7 @@ elif page.startswith("5"):
     h2h = M["h2h"].set_index("approach").loc[[PRIMARY, SECONDARY]]
     at20 = h2h["rejected_eur_caught@20%"]
 
-    # ---- the answer first
+    # The answer first
     st.markdown(f"""
 **Two ways to pick which quotes get reviewed, judged on the same {h2h.n_quotes.iloc[0]} reviewed quotes:**
 - **Primary · rule:** review if the bill is more than **{C.RULE_K}× the inspector estimate**. No model.
@@ -561,7 +560,7 @@ elif page.startswith("5"):
     t1, t2, t3, t4 = st.tabs(["① Primary rule", "② Secondary models", "③ Head to head: how the secondary wins",
                               "④ Unchecked overpricing (audit candidates)"])
 
-    # ---- 1. primary rule
+    # 1. Primary rule
     with t1:
         st.markdown(f"Compare the contractor's bill with the inspector's estimate and review when it is more than "
                     f"**{C.RULE_K}×** higher. Transparent and ready to run: the floor the models must beat.")
@@ -585,7 +584,7 @@ elif page.startswith("5"):
                 "rejections caught": rt.rejected_caught_if_reviewed.map("{:.0%}".format)}),
                 hide_index=True, width="stretch")
 
-    # ---- 2. secondary models
+    # 2. Secondary models
     with t2:
         a, b = st.columns(2)
         a.subheader("A · Fair-cost model")
@@ -624,7 +623,7 @@ elif page.startswith("5"):
         st.info("**Together:** priority = **P(reject) from B × bill**, so a quote ranks high when it is both risky and "
                 "expensive. Quotes above A's p90 are also sent to review.")
 
-    # ---- 3. head to head
+    # 3. Head to head
     with t3:
         budget = st.slider("Review budget (share of reviewed quotes)", 0.05, 1.0, 0.20, 0.05)
         qc, pts = queue_compare(r, budget)
@@ -699,7 +698,7 @@ elif page.startswith("5"):
                         f"{ov['€ above fair p90 caught: rule']:.0%} vs {ov['€ above fair p90 caught: secondary']:.0%}",
                         help="This yardstick comes from the fair-cost model, so it favours the secondary.")
 
-    # ---- 4. unchecked overpricing
+    # 4. Unchecked overpricing
     with t4:
         st.markdown("The head-to-head can only judge quotes reviewers saw. This tab shows the bills the fair-cost model "
                     "would question that nobody looked at: each claim's bill ÷ its fair price (p50), one quote per claim.")
@@ -740,7 +739,7 @@ elif page.startswith("5"):
                    "Rejection rate when reviewed: ≈5% for close claims vs ≈17% for those over 2×, based on only 35 rejected claims.")
 
 
-# ------------------------------------------------------------------ 6. quote checker
+# 6. Quote checker
 elif page.startswith("6"):
     st.title("Quote checker")
     st.caption("Enter what the inspection found and the contractor's quote. The models say what the repair "
@@ -819,7 +818,7 @@ elif page.startswith("6"):
                    "(biased toward large claims), so treat it as a ranking signal, not a calibrated probability.")
 
 
-# ------------------------------------------------------------------ 7. review queue
+# 7. Review queue
 elif page.startswith("7"):
     st.title("Review queue")
     today = int(q.manual_review.sum())
@@ -903,7 +902,7 @@ elif page.startswith("7"):
     st.download_button("Download queue (CSV)", show[cols].to_csv(index=False), "review_queue.csv", "text/csv")
 
 
-# ------------------------------------------------------------------ 8. verdict & next steps
+# 8. Verdict & next steps
 elif page.startswith("8"):
     st.title("Verdict & next steps")
     h2h = M["h2h"].set_index("approach")["rejected_eur_caught@20%"]
