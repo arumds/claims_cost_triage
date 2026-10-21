@@ -658,36 +658,6 @@ elif page.startswith("5"):
         vline = alt.Chart(pd.DataFrame({"x": [budget]})).mark_rule(color="black", strokeDash=[4, 4]).encode(x="x")
         st.altair_chart((base + vline).properties(height=320), width="stretch")
 
-        st.markdown("##### 3 · Why: the two queues pick different quotes")
-        plot = pts.melt(id_vars=["quote_id", "contractor_cost", "rule_ratio", "rejected"],
-                        var_name="approach", value_name="in_queue")
-        plot["approach"] = plot.approach.str.replace("in_queue::", "").map(LABEL)
-        plot["status"] = np.select(
-            [plot.in_queue & plot.rejected.eq(1), ~plot.in_queue & plot.rejected.eq(1), plot.in_queue],
-            ["rejected · caught", "rejected · missed", "approved · in queue"], "approved · not in queue")
-        status = ["rejected · caught", "rejected · missed", "approved · in queue", "approved · not in queue"]
-        st.altair_chart(alt.Chart(plot).mark_circle(stroke="white", strokeWidth=.5).encode(
-            x=alt.X("contractor_cost:Q", scale=alt.Scale(type="log", domain=[3000, 320000], clamp=True), title="Bill (€, log)",
-                    axis=alt.Axis(values=[3e3, 1e4, 3e4, 1e5, 3e5], format="~s")),
-            y=alt.Y("rule_ratio:Q", scale=alt.Scale(type="log", domain=[.1, 20], clamp=True),
-                    title="Bill ÷ estimate (log)", axis=alt.Axis(values=[.1, .5, 1, 2, 5, 10])),
-            color=alt.Color("status:N", scale=alt.Scale(domain=status, range=["#c53030", "#feb2b2", BLUE, "#e2e8f0"]),
-                            legend=alt.Legend(orient="bottom", title=None)),
-            size=alt.condition(alt.datum.rejected == 1, alt.value(70), alt.value(22)),
-            order=alt.Order("rejected:Q"),
-            tooltip=["quote_id", alt.Tooltip("contractor_cost", format=",.0f", title="bill €"),
-                     alt.Tooltip("rule_ratio", format=".2f", title="bill ÷ estimate"), "status"])
-            .properties(height=320, width=380)
-            .facet(column=alt.Column("approach:N", title=None, sort=list(LABEL.values()),
-                                     header=alt.Header(labelFontSize=13, labelFontWeight="bold"))))
-        rv = r[r.rule_ratio.notna()]
-        rej, ok = rv[rv.rejected == 1], rv[rv.rejected == 0]
-        st.success(f"""- **Rejected quotes are big bills:** median {eur(rej.contractor_cost.median())} vs {eur(ok.contractor_cost.median())} for approved ones.
-- **But they are not unusually far above the estimate:** median bill ÷ estimate {rej.rule_ratio.median():.2f}× vs {ok.rule_ratio.median():.2f}×.
-- So the **rule looks up** (high ratio) and fills its queue with mid-size overruns, while the **secondary looks right**
-  (high € at risk) and picks the big bills, where the dark-red rejections sit.""")
-        st.caption("Caveat: most of the gain comes from the bill-size term. Reviewers' rejections don't follow overpricing "
-                   "in this data, so an audit is needed to test whether the price gap finds overpricing nobody reviewed.")
         with st.expander("Same budget on all quotes: how much do the two queues overlap?"):
             ov = M["overlap"].set_index("metric").value
             k = st.columns(3)
