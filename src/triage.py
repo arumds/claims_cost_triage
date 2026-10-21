@@ -82,13 +82,14 @@ def _p90_excess(d: pd.DataFrame, flag: pd.Series) -> float:
     return ex[flag].sum() / ex.sum()
 
 
-def queue_compare(r: pd.DataFrame, budget: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+def queue_compare(r: pd.DataFrame, budget: float,
+                  include_reference: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     """What each approach's queue holds when both review the same share of reviewed quotes.
 
     Returns (one row per approach, the quotes with an in-queue flag per approach for plotting)."""
     r = r[r.rule_ratio.notna()].copy()
     n = int(np.ceil(budget * len(r)))
-    scores = {k: v for k, v in h2h_scores(r).items() if not k.startswith("reference")}
+    scores = {k: v for k, v in h2h_scores(r).items() if include_reference or not k.startswith("reference")}
     rows, flags = [], {}
     rej_eur = r.contractor_cost[r.rejected == 1].sum()
     for name, s in scores.items():

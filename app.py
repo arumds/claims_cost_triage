@@ -539,8 +539,10 @@ elif page.startswith("5"):
     st.title("Model results")
     st.caption("All numbers are out-of-fold: every quote is scored by a model that never saw its claim.")
     PRIMARY, SECONDARY = "primary: rule  bill ÷ estimate", "secondary: fair-cost + P(reject) × bill"
-    LABEL = {PRIMARY: "Primary · rule", SECONDARY: "Secondary · fair-cost + rejection model"}
-    h2h = M["h2h"].set_index("approach").loc[[PRIMARY, SECONDARY]]
+    BILL = "reference: largest bill first"
+    LABEL = {PRIMARY: "Primary · rule", SECONDARY: "Secondary · fair-cost + rejection model",
+             BILL: "Reference · largest bill first"}
+    h2h = M["h2h"].set_index("approach").loc[[PRIMARY, SECONDARY, BILL]]
     at20 = h2h["rejected_eur_caught@20%"]
 
     # The answer first
@@ -550,15 +552,19 @@ elif page.startswith("5"):
 - **Secondary · models:** **A** predicts a fair price from inspection data, **B** predicts how likely a reviewer
   rejects the quote. Review the quotes with the most € at risk: **P(reject) × bill**.
 """)
-    k = st.columns(3)
+    k = st.columns(4)
     k[0].metric("Rejected € caught · primary rule", f"{at20[PRIMARY]:.0%}", help="Reviewing the top 20% of quotes")
     k[1].metric("Rejected € caught · secondary", f"{at20[SECONDARY]:.0%}",
                 delta=f"+{(at20[SECONDARY] - at20[PRIMARY]) * 100:.0f} pts vs rule", help="Reviewing the top 20% of quotes")
-    k[2].metric("Fair price error (model A)", eur(M["m_a"].MAE_eur.iloc[1]),
+    k[2].metric("Rejected € caught · largest bill first", f"{at20[BILL]:.0%}",
+                delta=f"{(at20[SECONDARY] - at20[BILL]) * 100:+.0f} pts for the secondary", delta_color="off",
+                help="Reviewing the top 20% of quotes, ranked by the bill alone. No model, no estimate.")
+    k[3].metric("Fair price error (model A)", eur(M["m_a"].MAE_eur.iloc[1]),
                 delta=f"vs {eur(M['m_a'].MAE_eur.iloc[0])} for the raw estimate", delta_color="off")
 
-    t1, t2, t3, t4 = st.tabs(["① Primary rule", "② Secondary models", "③ Head to head: how the secondary wins",
-                              "④ Unchecked overpricing (audit candidates)"])
+    t1, t2, t_bill, t3, t4 = st.tabs(["① Primary rule", "② Secondary models", "③ Largest bill first",
+                                      "④ Head to head: how the secondary wins",
+                                      "⑤ Unchecked overpricing (audit candidates)"])
 
     # 1. Primary rule
     with t1:
@@ -623,12 +629,35 @@ elif page.startswith("5"):
         st.info("**Together:** priority = **P(reject) from B × bill**, so a quote ranks high when it is both risky and "
                 "expensive. Quotes above A's p90 are also sent to review.")
 
+    # Reference: largest bill first
+    with t_bill:
+        st.markdown("Rank every quote by the bill alone and review the biggest first. No model and no estimate, so it "
+                    "can score every quote, including the ones the rule can't. It is the bar both approaches must clear.")
+        budgets = [.1, .2, .3, .5]
+        st.dataframe(pd.DataFrame(
+            {"": [LABEL[a] for a in h2h.index],
+             "ranks by": ["bill ÷ estimate", "P(reject) × bill", "bill"],
+             "ROC AUC": h2h.ROC_AUC.map("{:.2f}".format).values,
+             **{f"rejected € caught · top {b:.0%}": h2h[f"rejected_eur_caught@{b:.0%}"].map("{:.0%}".format).values
+                for b in budgets}}),
+            hide_index=True, width="stretch")
+        gap = [(h2h.loc[SECONDARY, f"rejected_eur_caught@{b:.0%}"] - h2h.loc[BILL, f"rejected_eur_caught@{b:.0%}"]) * 100
+               for b in budgets]
+        st.info(f"**Reading it:** at a 20% budget, largest bill first catches **{at20[BILL]:.0%}** of rejected €, "
+                f"against {at20[SECONDARY]:.0%} for the secondary and {at20[PRIMARY]:.0%} for the rule. Almost all of the "
+                "secondary's lead over the rule comes from looking at big bills first: across these budgets the "
+                f"secondary is {min(gap):+.0f} to {max(gap):+.0f} pts from largest bill first.")
+        st.warning("**Why not just use it:** it ignores price. A fairly priced €300k repair ranks above a €20k bill at "
+                   "3× its estimate, so small overpriced bills are never reviewed, and a contractor could stay out of "
+                   "the queue by splitting a bill. It also says nothing about quotes nobody reviewed.")
+        st.caption(f"Same {h2h.n_quotes.iloc[0]} reviewed quotes with a usable estimate as the head to head, out-of-fold.")
+
     # 3. Head to head
     with t3:
         budget = st.slider("Review budget (share of reviewed quotes)", 0.05, 1.0, 0.20, 0.05)
-        qc, pts = queue_compare(r, budget)
+        qc, pts = queue_compare(r, budget, include_reference=True)
         qc = qc.set_index("approach")
-        p, s_ = qc.loc[PRIMARY], qc.loc[SECONDARY]
+        p, s_, lb = qc.loc[PRIMARY], qc.loc[SECONDARY], qc.loc[BILL]
         n_rej, n_all = int(p.rejections_total), len(pts)
         rej_total = pts.contractor_cost[pts.rejected == 1].sum()
         st.markdown(f"""**How to read it.** Reviewers rejected **{n_rej} of {n_all}** reviewed quotes, worth
@@ -637,24 +666,26 @@ elif page.startswith("5"):
 
         st.markdown(f"##### 1 · Result at a {budget:.0%} budget")
         st.dataframe(pd.DataFrame({
-            "": [LABEL[PRIMARY], LABEL[SECONDARY]],
-            "ranks by": ["bill ÷ estimate", "P(reject) × bill"],
-            "rejected € caught": [f"{p.rejected_eur_caught:.0%}", f"{s_.rejected_eur_caught:.0%}"],
-            "rejected quotes caught": [f"{int(p.rejections_caught)} of {n_rej}", f"{int(s_.rejections_caught)} of {n_rej}"],
-            "median bill in queue": [eur(p.median_bill), eur(s_.median_bill)],
-            "median bill ÷ estimate in queue": [f"{p.median_bill_to_estimate:.2f}×", f"{s_.median_bill_to_estimate:.2f}×"]}),
+            "": [LABEL[PRIMARY], LABEL[SECONDARY], LABEL[BILL]],
+            "ranks by": ["bill ÷ estimate", "P(reject) × bill", "bill"],
+            "rejected € caught": [f"{x.rejected_eur_caught:.0%}" for x in (p, s_, lb)],
+            "rejected quotes caught": [f"{int(x.rejections_caught)} of {n_rej}" for x in (p, s_, lb)],
+            "median bill in queue": [eur(x.median_bill) for x in (p, s_, lb)],
+            "median bill ÷ estimate in queue": [f"{x.median_bill_to_estimate:.2f}×" for x in (p, s_, lb)]}),
             hide_index=True, width="stretch")
         st.caption(f"The € share is higher than the count share for the secondary ({int(s_.rejections_caught)} of {n_rej} "
                    f"quotes but {s_.rejected_eur_caught:.0%} of €) because the rejections it catches are the largest bills.")
 
         st.markdown("##### 2 · The gap holds at every budget")
-        curves = M["h2h_curves"][M["h2h_curves"].approach.isin([PRIMARY, SECONDARY])].assign(
+        curves = M["h2h_curves"][M["h2h_curves"].approach.isin([PRIMARY, SECONDARY, BILL])].assign(
             approach=lambda d: d.approach.map(LABEL))
         base = alt.Chart(curves).mark_line(strokeWidth=2.5).encode(
             x=alt.X("share_reviewed:Q", axis=alt.Axis(format="%"), title="Share of quotes reviewed"),
             y=alt.Y("share_value_caught:Q", axis=alt.Axis(format="%"), title="Share of rejected € caught"),
-            color=alt.Color("approach:N", scale=alt.Scale(domain=list(LABEL.values()), range=[ORANGE, BLUE]),
-                            legend=alt.Legend(orient="bottom", title=None, labelLimit=320)))
+            color=alt.Color("approach:N", scale=alt.Scale(domain=list(LABEL.values()), range=[ORANGE, BLUE, GREY]),
+                            legend=alt.Legend(orient="bottom", title=None, labelLimit=320)),
+            strokeDash=alt.StrokeDash("approach:N", scale=alt.Scale(domain=list(LABEL.values()),
+                                                                    range=[[1, 0], [1, 0], [4, 3]]), legend=None))
         vline = alt.Chart(pd.DataFrame({"x": [budget]})).mark_rule(color="black", strokeDash=[4, 4]).encode(x="x")
         st.altair_chart((base + vline).properties(height=320), width="stretch")
 
@@ -791,73 +822,40 @@ elif page.startswith("6"):
 # 7. Review queue
 elif page.startswith("7"):
     st.title("Review queue")
+    st.markdown("**The question:** if the team can review a fixed number of quotes, which ranking puts the "
+                "right ones at the top?")
     today = int(q.manual_review.sum())
     n = st.slider("How many quotes can the team review?", 0, len(q) // 5 * 5, today - today % 5, 5,
-                  help=f"Today the insurer reviewed {today:,} quotes, {today / len(q):.1%} of the {len(q):,} "
-                       f"in the file, which is the default here. The deck reports the same {today:,}.")
-    rank_by = st.radio("Rank by", ["Primary rule: bill ÷ estimate", "Secondary: P(reject) × quote (€ at risk)"],
-                       horizontal=True, help="Quotes without a usable estimate go last under the rule")
-    key = "priority_eur" if rank_by.startswith("Secondary") else "rule_ratio"
-    who = "model" if key == "priority_eur" else "rule"
-    st.caption("All historical quotes, ranked by " + (
-        "expected € at risk: P(reject) × quote." if who == "model" else
-        f"how far the bill is above the inspector estimate (flagged above {C.RULE_K}×). Quotes without an estimate go last."))
-    ranked = q.sort_values(key, ascending=False, na_position="last").reset_index(drop=True)
-    top = ranked.head(n)
-    c = st.columns(4)
-    c[0].metric("Quotes to review", f"{n:,}", help=f"{n / len(q):.1%} of the {len(q):,} quotes in the file.")
-    c[1].metric("Of which currently auto-approved", f"{(~top.manual_review).sum():,}")
-    c[2].metric("Quoted € in queue", eur(top.contractor_cost.sum()))
+                  help=f"Default: the {today:,} quotes reviewed today ({today / len(q):.1%} of {len(q):,}).")
+    rankings = {"Rule": ("rule_ratio", "bill ÷ inspector estimate, highest first"),
+                "Model": ("priority_eur", "P(reject) × bill = € at risk, highest first"),
+                "Largest bill": ("contractor_cost", "biggest bill first, no model needed")}
     rej_eur = q.loc[q.rejected == 1, "contractor_cost"].sum()
-    c[3].metric("Known rejections in queue", f"{top.rejected.sum()} / {q.rejected.sum()}",
-                delta=f"{top.loc[top.rejected == 1, 'contractor_cost'].sum() / rej_eur:.0%} of rejected €",
-                delta_color="off",
-                help="Rejections only exist where someone reviewed, so today's process 'catches' 100% by definition. "
-                     "Compare by € and look at the four groups below.")
+    tops = {k: q.sort_values(col, ascending=False, na_position="last").head(n) for k, (col, _) in rankings.items()}
+    caught = {k: t.loc[t.rejected == 1, "contractor_cost"].sum() / rej_eur for k, t in tops.items()}
+    best = max(caught, key=caught.get)
 
-    st.subheader(f"{who.capitalize()} queue vs today's reviews")
-    in_q = q.quote_id.isin(top.quote_id)
-    groups = [("A · In queue, reviewed today", in_q & q.manual_review, "both agree: review"),
-              ("B · In queue, auto-approved today", in_q & ~q.manual_review, f"{who} ADDS these"),
-              ("C · Not in queue, reviewed today", ~in_q & q.manual_review, f"{who} DROPS these"),
-              ("D · Not in queue, auto-approved today", ~in_q & ~q.manual_review, "both agree: auto-approve")]
-    rows = []
-    for name, mask, meaning in groups:
-        d = q[mask]
-        reviewed = bool(d.manual_review.all()) if len(d) else False
-        rows.append({"group": name, "meaning": meaning, "quotes": len(d),
-                     "median quote": eur(d.contractor_cost.median()) if len(d) else "–",
-                     "above fair p90": f"{(d.contractor_cost > d.fair_p90).mean():.0%}" if len(d) else "–",
-                     "rejected": f"{int(d.rejected.sum())} ({d.rejected.mean():.0%})" if reviewed else "unknown",
-                     "rejected €": eur(d.loc[d.rejected == 1, "contractor_cost"].sum()) if reviewed else "unknown – never checked"})
-    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-    a_, b_, c_ = (q[g[1]] for g in groups[:3])
-    caught_a = a_.loc[a_.rejected == 1, "contractor_cost"].sum() / rej_eur
-    lost_c = eur(c_.loc[c_.rejected == 1, "contractor_cost"].sum())
-    if who == "model":
-        st.info(f"**Reading it:** the overlap (A, {len(a_)} quotes) holds **{caught_a:.0%} of all rejected €** "
-                f"(rejection rate {a_.rejected.mean():.0%} vs {q[q.manual_review].rejected.mean():.0%} overall). "
-                f"To free capacity, the model stops reviewing {len(c_)} smaller, mostly normally priced quotes (C) that held only "
-                f"{lost_c} of rejections, and instead reviews {len(b_)} larger "
-                f"quotes (B, median {eur(b_.contractor_cost.median()) if len(b_) else '–'}) that nobody checked. "
-                "What B would yield is unknown – a pilot or random audit would measure it.")
-    else:
-        st.info(f"**Reading it:** the rule keeps only {len(a_)} of today's reviews (A), holding **{caught_a:.0%} of all "
-                f"rejected €**. It drops {len(c_)} reviewed quotes (C, median {eur(c_.contractor_cost.median())}, median "
-                f"bill ÷ estimate {c_.rule_ratio.median():.2f}×) that held {lost_c} of rejections, because most "
-                f"rejected quotes are not far above their estimate. Instead it adds {len(b_)} auto-approved quotes (B, median "
-                f"{eur(b_.contractor_cost.median()) if len(b_) else '–'}, median bill ÷ estimate "
-                f"{b_.rule_ratio.median():.2f}×) that overran their estimate. "
-                f"{int(q.rule_ratio.isna().sum())} quotes have no usable estimate and can never enter its queue. "
-                "Whether B holds real overpricing is unknown – a pilot or random audit would measure it.")
+    for col, (k, (_, how)) in zip(st.columns(3), rankings.items()):
+        t = tops[k]
+        with col.container(border=True):
+            st.markdown(f"**{k}**" + ("  ⭐" if k == best else ""))
+            st.caption(how)
+            st.metric("Rejected € caught", f"{caught[k]:.0%}",
+                      help="Share of the € on all known rejected quotes that this queue would review.")
+            st.markdown(f"- {int(t.rejected.sum())} of {int(q.rejected.sum())} rejected quotes\n"
+                        f"- {int((~t.manual_review).sum()):,} quotes nobody checked today")
+    st.info(f"**Reading it:** at {n:,} reviews, the **{best.lower()}** ranking catches the most rejected €. The model and "
+            "largest-bill rankings pick mostly the same big bills, so they score close; the rule picks bills far above "
+            "their estimate, which reviewers rarely reject. Quotes nobody checked have no outcome, so their value is "
+            "unknown until a random audit measures it.")
 
     st.subheader("The queue")
-
-    only_auto = st.checkbox("Show only quotes that were auto-approved in reality")
-    show = top[~top.manual_review] if only_auto else top
-    show = show.assign(above_p90=show.contractor_cost > show.fair_p90)
+    pick = st.selectbox("Show the queue for", list(rankings), index=1)
+    show = tops[pick].assign(above_p90=lambda d: d.contractor_cost > d.fair_p90)
+    if st.checkbox("Only quotes nobody checked today"):
+        show = show[~show.manual_review]
     cols = ["claim_id", "quote_id", "quote_event", "inspection_type", "estimated_repair_cost", "contractor_cost",
-            "rule_ratio", "rule_flag", "fair_p50", "fair_p90", "above_p90", "p_reject", "priority_eur",
+            "rule_ratio", "fair_p50", "fair_p90", "above_p90", "p_reject", "priority_eur",
             "manual_review", "decision_on_quote"]
     st.dataframe(show[cols].round(2), hide_index=True, width="stretch", height=480,
                  column_config={"p_reject": st.column_config.ProgressColumn("P(reject)", min_value=0, max_value=1, format="%.2f"),
@@ -865,7 +863,6 @@ elif page.startswith("7"):
                                 "estimated_repair_cost": st.column_config.NumberColumn("estimate", format="€%.0f"),
                                 "contractor_cost": st.column_config.NumberColumn("quote", format="€%.0f"),
                                 "rule_ratio": st.column_config.NumberColumn("bill ÷ estimate", format="%.2f"),
-                                "rule_flag": st.column_config.CheckboxColumn(f"rule flag (> {C.RULE_K}×)"),
                                 "fair_p50": st.column_config.NumberColumn("fair p50", format="€%.0f"),
                                 "fair_p90": st.column_config.NumberColumn("fair p90", format="€%.0f"),
                                 "above_p90": st.column_config.CheckboxColumn("above fair p90")})
@@ -878,49 +875,43 @@ elif page.startswith("8"):
     h2h = M["h2h"].set_index("approach")["rejected_eur_caught@20%"]
     rule_eur, model_eur = h2h["primary: rule  bill ÷ estimate"], h2h["secondary: fair-cost + P(reject) × bill"]
     bill_eur = h2h["reference: largest bill first"]
-    fc = M["fair_claims"]
-    ratio = fc.contractor_cost / fc.fair_p50
-    far = fc[ratio > 2]
-    far_auto = far[~far.manual_review]
-    far_eur = (far_auto.contractor_cost - far_auto.fair_p50).sum() / 1e6
     ma = M["m_a"]
 
     st.subheader("Does ML help reduce claims costs? Partly.")
     c = st.columns(3)
-    c[0].metric("Rejected € caught, top 20% reviewed", f"{model_eur:.0%}",
-                delta=f"{(model_eur - rule_eur) * 100:+.0f} pts vs the rule", delta_color="normal")
-    c[1].metric("Fair-cost model error (MAE)", eur(ma.MAE_eur.iloc[1]),
-                delta=f"vs {eur(ma.MAE_eur.iloc[0])} for the estimate", delta_color="off")
-    c[2].metric("Unchecked bills over 2× fair price", f"{len(far_auto)} claims",
-                delta=f"≈€{far_eur:.0f}M above fair price", delta_color="off")
+    c[0].metric("Model: rejected € caught, top 20%", f"{model_eur:.0%}", delta=f"{(model_eur - rule_eur) * 100:+.0f} pts vs rule")
+    c[1].metric("Largest bill first, same budget", f"{bill_eur:.0%}", delta_color="off",
+                delta=f"{(model_eur - bill_eur) * 100:+.0f} pts for the model")
+    c[2].metric("Fair-price error (MAE)", eur(ma.MAE_eur.iloc[1]), delta=f"vs {eur(ma.MAE_eur.iloc[0])} for the estimate",
+                delta_color="off")
 
     a, b = st.columns(2)
-    a.success(f"""**Where it helps**
-- **Better review queue:** {model_eur:.0%} vs {rule_eur:.0%} of rejected € for the same effort. Most of the gain is bill
-  size: "largest bill first" alone gets {bill_eur:.0%}.
-- **Better price benchmark:** half the error of the inspector estimate, and it also prices the
-  {M['overlap'].value.iloc[-1]:.0%} of quotes without an estimate.
-- **Finds bills nobody checked:** {len(far_auto)} of {len(far)} claims over 2× their fair price were never reviewed.""")
-    b.warning(f"""**Where it doesn't (yet)**
-- **Overpricing doesn't predict rejection:** reviewers' decisions don't follow the price gap in this data.
-- **Savings are not proven:** there is no "correct price" label and auto-approved quotes were never checked.
-- **Few, biased labels:** only {M['m_b'].n_rejected.iloc[0]} rejections, all from reviews aimed at large claims.""")
+    a.success("""**Helps**
+- A much better review queue than the rule.
+- A fair price for every quote, about half the estimate's error.
+- Points at overpriced bills nobody reviews today.""")
+    b.warning("""**Doesn't (yet)**
+- Most of the queue's gain is bill size: largest bill first is nearly as good.
+- It only learns what reviewers already reject.
+- Savings are unproven: auto-approved quotes were never checked.""")
 
-    st.info("**Recommendation:** (1) run the **rule** now as a transparent floor; (2) rank the review queue with the "
-            "**model**; (3) start a **random audit** of auto-approved claims above the fair price and record the "
-            "approved amount after review. Better data, not a better algorithm, is what proves the saving.")
+    st.info("**Recommendation:** keep the rule as a transparent floor, rank the rest by € at risk (or simply by bill "
+            "size), flag bills above the fair p90 separately, and run a small random audit to measure the saving.")
 
-    st.subheader("With more time")
-    st.markdown(f"""
-1. **Random audit** of ~5% of auto-approved quotes: unbiased labels and a measured saving.
-2. **Record the approved amount and the rejection reason**, so savings become a target and price is separated from coverage.
-3. **Add dates and itemised quote lines**, to validate on later claims and flag specific inflated items.
-4. **Tune the rule per damage type and in €**, since one k = {C.RULE_K} over-flags some segments and misses others.
-5. **Shadow-run before switching:** score new quotes with rule and model side by side, then pilot and compare € saved per review hour.""")
-    with st.expander("More ideas"):
-        st.markdown(f"""
-- Calibrated price ranges with conformal prediction (p90 covers {ma.p90_coverage.iloc[1]:.0%}, target 90%).
-- Image models on inspection photos, and text from inspection reports and quotes.
-- Feedback to inspection organisations on estimate accuracy; monitor contractors whose bills sit above fair cost.
-- Negotiate preliminary quotes against the fair price; watch preliminary → final quote changes.
-- Explainable flags for reviewers, and monitoring for drift, calibration and contractor behaviour.""")
+    n1, n2 = st.columns(2)
+    n1.markdown(f"""**What I would do next**
+1. Calibrate P(reject), so "€ at risk" is a real euro amount.
+2. Recalibrate the p90 band (covers {ma.p90_coverage.iloc[1]:.0%}, target 90%).
+3. Test whether a rule threshold per damage type beats one k = {C.RULE_K}.""")
+    n2.markdown("""**What I would need**
+1. A random audit of a small share of auto-approved quotes.
+2. The approved amount and rejection reason for each review.
+3. Claim dates and itemised quote lines.
+4. A shadow run: rule and model side by side on new quotes before switching.""")
+
+    st.subheader("If the data becomes available")
+    ia, nl = st.columns(2)
+    ia.markdown("""**Image analysis** of inspection photos: damage severity as a fair-price feature, and a check
+that the billed work matches the damage. Today's file only has the photo count.""")
+    nl.markdown("""**NLP** on reports and quote lines: item-level price checks, items billed but not in the report,
+and rejection reasons split into price vs coverage. Today's file has no text.""")
